@@ -2830,7 +2830,7 @@ function splitPeople(value) {
   const raw = String(value ?? "").trim();
   if (!raw) return [];
 
-  // "เมธิณี ,ลิ่มดุลย์" (เว้นวรรคหน้าคอมมา) = ชื่อ-นามสกุลคนเดียว · "Max, Nan" = 2 คน
+  // "สมชาย ,ใจดี" (เว้นวรรคหน้าคอมมา) = ชื่อ-นามสกุลคนเดียว · "Max, Nan" = 2 คน
   const joined = raw.replace(/\s+,\s*/g, " ");
   return [...new Set(
     joined.split(/[,;/|&\n]+|\s+และ\s+/i)
@@ -14442,5 +14442,269 @@ refreshFilterUI();
 translateTree(document.body);
 </script>
 
+<script type="module">
+/* =========================================================
+   Feishu / Lark Base connector (real-time, อ่านอย่างเดียว)
+   - ทำงานเฉพาะเมื่อหน้านี้ถูกเปิดเป็น Plugin ภายใน Feishu Base (อยู่ใน iframe)
+   - เปิด URL ตรง ๆ นอก Feishu = Template อัปโหลด XLSX แบบเดิม ไม่มีข้อมูลใด ๆ
+   - อ่านข้อมูลผ่าน Base JS SDK (สื่อสารกับหน้าต่าง Feishu เท่านั้น) ไม่ส่งข้อมูลไปเซิร์ฟเวอร์อื่น
+   - สิทธิ์การเห็นข้อมูล = สิทธิ์ของผู้ใช้ใน Base (Advanced permissions)
+========================================================= */
+const FS_SDK_URL = "https://cdn.jsdelivr.net/npm/@lark-base-open/js-sdk@1.0.2/+esm";
+const FS_TABLE_KEY = "r04-feishu-table";
+const FS_DATE_TYPES = [5, 1001, 1002];       // DateTime · CreatedTime · ModifiedTime
+const FS = { bitable:null, table:null, tableName:"", unsub:[], timer:null, loading:false, first:true };
+
+const fsInFrame = (() => { try { return window.self !== window.top; } catch (_) { return true; } })();
+if (fsInFrame) fsInit();
+
+function fsTimeout(promise, ms, message) {
+  return Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error(message)), ms))]);
+}
+
+function fsStatus(text, tone = "gray", badge = "") {
+  $("fileStatus").textContent = text;
+  $("dataStatus").className = `badge badge-${tone}`;
+  if (badge) $("dataStatus").textContent = badge;
+}
+
+// ค่าในเซลล์ Base → ข้อความ/ตัวเลขแบบเดียวกับที่อ่านจาก XLSX
+function fsCell(value, type) {
+  if (value === null || value === undefined) return "";
+  if (FS_DATE_TYPES.includes(type) && typeof value === "number") {
+    const d = new Date(value);
+    return `${localISO(d)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  }
+  if (typeof value === "number") return value;
+  if (typeof value === "boolean") return value ? "ใช่" : "";
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    // ข้อความหลายช่วง (text / url / mention) ต่อกันเป็นข้อความเดียว
+    if (value.every(x => x && typeof x === "object" && "type" in x && "text" in x)) return value.map(x => x.text ?? "").join("");
+    return value.map(x => fsCell(x, type)).filter(x => x !== "" && x !== null && x !== undefined).join(", ");
+  }
+  if (typeof value === "object") return value.text ?? value.name ?? value.fullAddress ?? value.address ?? value.value ?? value.link ?? "";
+  return String(value);
+}
+
+async function fsReadTable(table) {
+  const metas = await table.getFieldMetaList();
+  let ordered = metas;
+  try {   // เรียงคอลัมน์ตามมุมมองแรกของตาราง (ถ้าอ่านได้)
+    const views = await table.getViewList();
+    const ids = await (views[0].getVisibleFieldIdList?.() ?? views[0].getFieldIdList());
+    const byId = new Map(metas.map(m => [m.id, m]));
+    ordered = [...ids.map(id => byId.get(id)).filter(Boolean), ...metas.filter(m => !ids.includes(m.id))];
+  } catch (_) {
+    ordered = [...metas.filter(m => m.isPrimary), ...metas.filter(m => !m.isPrimary)];
+  }
+  const rows = [];
+  let pageToken;
+  do {
+    const res = await table.getRecords({ pageSize:500, pageToken });
+    (res.records || []).forEach(record => {
+      const row = {};
+      ordered.forEach(m => { row[m.name] = fsCell(record.fields?.[m.id], m.type); });
+      row.__baseRecordId = record.recordId;
+      rows.push(row);
+    });
+    pageToken = res.hasMore ? res.pageToken : undefined;
+  } while (pageToken);
+  return { headers:ordered.map(m => m.name), rows };
+}
+
+function fsWorkbook(rows, sheetName) {
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.map(r => {
+    const out = {};
+    Object.keys(r).forEach(k => { if (!k.startsWith("__")) out[k] = r[k]; });
+    return out;
+  })), sheetName.slice(0, 31));
+  return wb;
+}
+
+// ประมวลผลแถวเข้า Dashboard (เส้นทางเดียวกับการอัปโหลด XLSX) · keepFilters = อัปเดตแบบ real-time ไม่ล้างตัวกรอง
+function r04IngestRows(rows, headers, label, { keepFilters = false, actionRows = null } = {}) {
+  if (!keepFilters) {
+    App.filterSel = {};
+    ["searchFilter", "dateFrom", "dateTo"].forEach(id => $(id).value = "");
+    App.quickRange = "all";
+  }
+  Object.values(App.charts).forEach(chart => { try { chart.destroy(); } catch (_) {} });
+  App.charts = {};
+  App.workbook = null;
+  App.fileName = label;
+  App.sourceSheetName = label;
+  if (!headers.includes(App.columns.id)) headers = [App.columns.id, ...headers];
+  App.sourceHeaders = headers;
+
+  App.rawRows = rows.map((row, index) => {
+    if (!isFilled(row[App.columns.id]) && row.__baseRecordId) row[App.columns.id] = row.__baseRecordId;
+    if (isFilled(row[App.columns.province])) row[App.columns.province] = normProvince(row[App.columns.province]);
+    return applyEdits({
+      ...row,
+      __rawIndex:index,
+      __ctype:classifyCustomerType(row[App.columns.customerType]),
+      __recordId:text(row[App.columns.id]) !== "-" ? text(row[App.columns.id]) : `ROW-${index + 2}`
+    });
+  });
+
+  App.actionPlans = actionRows
+    ? actionRows.filter(a => isFilled(a["Action ID"]) || isFilled(a["รายละเอียด"]))
+    : [];
+  mergeStoredActions();
+  buildDuplicateModel();
+  App.filteredRows = [...App.uniqueRows];
+  const newDps = autoAddDPs();
+  updateDpStatus();
+  buildFilterOptions();
+  applyFilters();
+  return newDps;
+}
+window.r04IngestRows = r04IngestRows;
+
+async function fsPickTables() {
+  const metas = await FS.bitable.base.getTableMetaList();
+  const info = [];
+  for (const m of metas) {
+    try {
+      const t = await FS.bitable.base.getTableById(m.id);
+      const names = (await t.getFieldMetaList()).map(f => f.name);
+      info.push({ ...m, names });
+    } catch (_) { info.push({ ...m, names:[] }); }
+  }
+  const has = (t, cols) => cols.every(c => t.names.includes(c));
+  let saved = "";
+  try { saved = localStorage.getItem(FS_TABLE_KEY) || ""; } catch (_) {}
+  let main = info.find(t => t.id === saved) ||
+    info.find(t => has(t, [App.columns.name, App.columns.customerType])) ||
+    info.find(t => t.names.includes(App.columns.name));
+  if (!main) {
+    const active = await FS.bitable.base.getActiveTable();
+    main = info.find(t => t.id === active.id) || info[0];
+  }
+  const dp = info.find(t => t !== main && /dp|master|shop/i.test(t.name) && t.names.some(n => /^(DP Code|DP|รหัสสาขา)/i.test(n)) && t.names.includes("จังหวัด"));
+  const action = info.find(t => t !== main && /action\s*plan/i.test(t.name));
+  return { info, main, dp, action };
+}
+
+function fsRenderPicker(info, mainId) {
+  let box = $("fsTablePick");
+  if (!box) {
+    box = document.createElement("span");
+    box.id = "fsTablePick";
+    box.style.cssText = "display:inline-flex;gap:6px;align-items:center;margin-left:8px";
+    $("dataStatus").parentElement.insertBefore(box, $("dataStatus"));
+  }
+  box.innerHTML = `<select id="fsTableSelect" class="lang-select" style="min-height:28px;font-weight:400" title="ตารางข้อมูลเข้าพบใน Feishu Base">
+      ${info.map(t => `<option value="${escapeHTML(t.id)}" ${t.id === mainId ? "selected" : ""}>${escapeHTML(t.name)}</option>`).join("")}
+    </select>
+    <button class="btn btn-sm" id="fsReload" type="button" title="โหลดข้อมูลจาก Feishu ใหม่">🔄 โหลดใหม่</button>`;
+  $("fsTableSelect").onchange = () => {
+    try { localStorage.setItem(FS_TABLE_KEY, $("fsTableSelect").value); } catch (_) {}
+    FS.first = true;
+    fsConnect();
+  };
+  $("fsReload").onclick = () => fsLoad({ keepFilters:true, manual:true });
+}
+
+async function fsLoad({ keepFilters = true, manual = false } = {}) {
+  if (!FS.table || FS.loading) return;
+  FS.loading = true;
+  try {
+    fsStatus(`กำลังอ่านข้อมูลจาก Feishu · ${FS.tableName} ...`, "orange", "กำลังซิงก์");
+    const { headers, rows } = await fsReadTable(FS.table);
+    const missing = App.requiredColumns.filter(c => c !== App.columns.id && !headers.includes(c));
+    let actionRows = null;
+    if (FS.actionTable) {
+      try { actionRows = (await fsReadTable(FS.actionTable)).rows; } catch (e) { console.warn("Action Plan table", e); }
+    }
+    if (FS.dpTable) {
+      try {
+        const dp = await fsReadTable(FS.dpTable);
+        const parsed = parseDpWorkbook(fsWorkbook(dp.rows, "DP"));
+        const keep = App.dpMaster.filter(r => r.source === "user" || r.source === "auto");
+        const fileDPs = new Set(parsed.map(r => normDP(r.dp)).filter(Boolean));
+        App.dpMaster = parsed;
+        keep.forEach(r => { if (!normDP(r.dp) || !fileDPs.has(normDP(r.dp))) App.dpMaster.push(r); });
+        ensureSpecialAreas();
+        saveDpMaster();
+      } catch (e) { console.warn("DP table", e); }
+    }
+    const newDps = r04IngestRows(rows, headers, `Feishu · ${FS.tableName}`, { keepFilters: keepFilters && !FS.first, actionRows });
+    const now = new Date();
+    const at = `${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`;
+    $("fileStatus").textContent =
+      `🟢 Feishu · ${FS.tableName} · ${formatNumber(App.rawRows.length)} รายการ · ${formatNumber(App.uniqueRows.length)} ลูกค้าใช้งานได้ · รอแก้ไข ${formatNumber(App.pendingRows.length)} · อัปเดต ${at}`;
+    if (missing.length) {
+      $("dataStatus").className = "badge badge-orange";
+      $("dataStatus").textContent = "คอลัมน์ไม่ครบ";
+      $("dataStatus").title = `ไม่พบคอลัมน์: ${missing.join(", ")}`;
+      if (FS.first || manual) showToast(`ตาราง Feishu ไม่มีคอลัมน์: ${missing.join(", ")} — ตัวเลขบางส่วนจะว่าง`);
+    } else {
+      $("dataStatus").className = "badge badge-green";
+      $("dataStatus").textContent = "Real-time";
+      $("dataStatus").title = "เชื่อม Feishu Base · อัปเดตอัตโนมัติเมื่อมีการเพิ่ม/แก้/ลบแถว";
+    }
+    if (FS.first) {
+      logEvent("upload", `เชื่อม Feishu Base · ตาราง ${FS.tableName} · ${App.rawRows.length} รายการ`);
+      showToast(`เชื่อม Feishu แล้ว · ${formatNumber(App.uniqueRows.length)} ลูกค้า`);
+      if (newDps) setTimeout(() => showToast(`พบ DP ใหม่ ${newDps} รหัส — เพิ่มในฐาน DP (รอยืนยัน) แล้ว`), 2800);
+    } else if (manual) {
+      showToast("โหลดข้อมูลจาก Feishu ใหม่แล้ว");
+    }
+    FS.first = false;
+  } catch (error) {
+    console.error(error);
+    fsStatus(`อ่านข้อมูลจาก Feishu ไม่ได้: ${error.message || error}`, "red", "เกิดข้อผิดพลาด");
+  } finally {
+    FS.loading = false;
+  }
+}
+
+function fsSchedule() {
+  clearTimeout(FS.timer);
+  FS.timer = setTimeout(() => fsLoad({ keepFilters:true }), 1500);   // รวมการแก้ติดกันหลายแถวเป็นรอบเดียว
+}
+
+async function fsConnect() {
+  FS.unsub.forEach(off => { try { off(); } catch (_) {} });
+  FS.unsub = [];
+  const { info, main, dp, action } = await fsPickTables();
+  if (!main) throw new Error("ไม่พบตารางใน Base นี้");
+  FS.table = await FS.bitable.base.getTableById(main.id);
+  FS.tableName = main.name;
+  FS.dpTable = dp ? await FS.bitable.base.getTableById(dp.id) : null;
+  FS.actionTable = action ? await FS.bitable.base.getTableById(action.id) : null;
+  fsRenderPicker(info, main.id);
+  [FS.table, FS.dpTable, FS.actionTable].filter(Boolean).forEach(t => {
+    ["onRecordAdd", "onRecordModify", "onRecordDelete"].forEach(ev => {
+      try { const off = t[ev]?.(fsSchedule); if (typeof off === "function") FS.unsub.push(off); } catch (_) {}
+    });
+  });
+  await fsLoad({ keepFilters:false });
+}
+
+async function fsInit() {
+  fsStatus("กำลังเชื่อมต่อ Feishu Base ...", "orange", "กำลังเชื่อม");
+  try {
+    const sdk = await fsTimeout(import(FS_SDK_URL), 15000, "โหลด Feishu SDK ไม่สำเร็จ (ตรวจอินเทอร์เน็ต)");
+    FS.bitable = sdk.bitable || sdk.default?.bitable;
+    if (!FS.bitable) throw new Error("ไม่พบ bitable ใน SDK");
+    await fsTimeout(FS.bitable.base.getTableMetaList(), 8000, "หน้านี้ไม่ได้เปิดเป็น Plugin ใน Feishu Base");
+
+    // โหมด Feishu: ซ่อนการอัปโหลดข้อมูลเข้าพบ (ข้อมูลมาจาก Base อย่างเดียว)
+    document.querySelector(".upload-banner h3").textContent = "เชื่อมต่อ Feishu Base · Real-time";
+    document.querySelector(".upload-banner p").textContent =
+      "อ่านข้อมูลจากตารางใน Base นี้โดยตรง · เพิ่ม / แก้ / ลบแถวใน Feishu แล้ว Dashboard อัปเดตเองภายในไม่กี่วินาที · เห็นเฉพาะข้อมูลที่บัญชีคุณมีสิทธิ์ใน Base";
+    $("uploadButton").style.display = "none";
+    await fsConnect();
+    if (FS.dpTable) $("dpUploadButton").style.display = "none";
+  } catch (error) {
+    console.warn(error);
+    fsStatus(`${error.message || error} · ใช้การอัปโหลด XLSX ได้ตามปกติ`, "gray", "รอข้อมูล");
+  }
+}
+</script>
 </body>
 </html>
