@@ -5,12 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>R04 Management Dashboard</title>
 
+<!-- จำกัดปลายทางเครือข่าย: ไลบรารี 2 ตัว (ตรวจ hash) · ฟอนต์ · ขอบเขตจังหวัดสาธารณะ · Feishu Bridge ในเครื่องนี้เท่านั้น
+     ข้อมูลลูกค้าส่งออกนอกเครื่องผ่าน fetch / form / รูปภาพ ไม่ได้ -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://cdn.sheetjs.com/xlsx-0.20.3/ https://cdn.jsdelivr.net/npm/chart.js@4.4.7/; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' https://cdn.jsdelivr.net/gh/ https://raw.githubusercontent.com/apisit/ http://127.0.0.1:* http://localhost:*; form-action 'none'; base-uri 'none'; object-src 'none'">
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&family=Prompt:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<!-- integrity = ถ้าไฟล์บน CDN ถูกเปลี่ยนแม้ 1 ตัวอักษร เบราว์เซอร์จะไม่รันโค้ดนั้น (เปลี่ยนเวอร์ชันต้องคำนวณ hash ใหม่) -->
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js" integrity="sha384-EnyY0/GSHQGSxSgMwaIPzSESbqoOLSexfnSMN2AP+39Ckmn92stwABZynq1JyzdT" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" integrity="sha384-vsrfeLOOY6KuIYKDlmVH5UiBmgIdB1oEf7p01YgWHuqmOHfZr374+odEv96n9tNC" crossorigin="anonymous"></script>
 
 <style>
 :root {
@@ -1018,7 +1023,10 @@ body.night-mode .user-name{background:var(--panel2);color:var(--text);border-col
 body.night-mode .summary-box{background:var(--panel2);color:var(--text);border-color:#3A4A63}
 .log-type{font-size:calc(9px * var(--fs))}
 .menu-item.hidden-role{display:none}
-body.role-readonly .ap-btn,body.role-readonly #editDetail,body.role-readonly #createActionFromDetail,body.role-readonly [data-ap-new],body.role-readonly #auditSample,body.role-readonly #auditCallSave,body.role-readonly #dpAdd,body.role-readonly #dpClear,body.role-readonly #vocabSave,body.role-readonly #logClear,body.role-readonly #clearEdits,body.role-readonly #saveAction{display:none!important}
+#livePanel{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+#livePanel .lang-select{min-height:28px;padding:2px 8px;font-size:calc(11px * var(--fs))}
+#livePanel[hidden],#storeStatus[hidden]{display:none!important}
+body.role-readonly .ap-btn,body.role-readonly #editDetail,body.role-readonly #createActionFromDetail,body.role-readonly [data-ap-new],body.role-readonly #auditSample,body.role-readonly #auditCallSave,body.role-readonly #dpAdd,body.role-readonly #dpClear,body.role-readonly #vocabSave,body.role-readonly #logClear,body.role-readonly #clearEdits,body.role-readonly #saveAction,body.role-readonly #storeRestore,body.role-readonly #storeClear{display:none!important}
 .map-wrap svg{width:100%;height:auto;display:block}
 .map-legend{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:10px;font-size:calc(10.5px * var(--fs));color:var(--muted)}
 .map-legend i{display:inline-block;width:26px;height:12px;border-radius:3px}
@@ -1316,7 +1324,7 @@ body.night-mode .chip-row button{color:#E2E8F0;border-color:#3A4A63}
       <div class="font-ctl" title="ขนาดตัวอักษร (ทั้งระบบ รวมกราฟ)">
         <button type="button" id="fontDown">A−</button><span id="fontVal">100%</span><button type="button" id="fontUp">A+</button>
       </div>
-      <select class="role-select" id="roleSelect" title="บทบาทผู้ใช้ (กำหนดเมนูที่เห็น · บันทึกใน Log)">
+      <select class="role-select" id="roleSelect" title="มุมมองตามหน้าที่ (กำหนดเมนูที่เห็น · บันทึกใน Log) — ไม่ใช่ระบบสิทธิ์ ทุกบทบาทเปิดไฟล์เดียวกันได้">
         <option value="boss">👑 Boss</option>
         <option value="admin">ผู้ดูแลระบบ</option>
         <option value="mkt">MKT</option>
@@ -1334,11 +1342,11 @@ body.night-mode .chip-row button{color:#E2E8F0;border-color:#3A4A63}
         <button class="btn btn-primary" id="exportMenuBtn" type="button">Export ▾</button>
         <div class="exp-menu">
           <button type="button" data-export="xlsx-full"><span class="exp-ico">XLSX</span><span>XLSX ครบทุกชีต<small>ข้อมูลทั้งหมด + ตามตัวกรอง + Audit + Action Plan</small></span></button>
-          <button type="button" data-export="report"><span class="exp-ico">RPT</span><span>Report การเปลี่ยนแปลง<small>เฉพาะแถวที่แก้ไข / Audit Call · คอลัมน์เรียงตามไฟล์ต้นฉบับ สำหรับอัปเดต Feishu</small></span></button>
           <button type="button" data-export="xlsx-filtered"><span class="exp-ico">XLSX</span><span>XLSX ตามตัวกรอง<small id="expScopeNote1">เฉพาะลูกค้าที่แสดงอยู่ (1 แถว / ลูกค้า) · หน้าแผนก = เฉพาะแผนกนั้น</small></span></button>
           <button type="button" data-export="csv"><span class="exp-ico">CSV</span><span>CSV ตามตัวกรอง<small>UTF-8 · หน้าแผนก = เฉพาะแผนกนั้น</small></span></button>
           <button type="button" data-export="png"><span class="exp-ico">PNG</span><span>PNG หน้านี้<small>ภาพสรุป: หัวเรื่อง · ตัวกรอง · ตัวเลข · กราฟทั้งหมดในหน้า</small></span></button>
           <button type="button" data-export="pdf"><span class="exp-ico">PDF</span><span>PDF หน้านี้<small>เปิดหน้าพิมพ์ → เลือก "บันทึกเป็น PDF"</small></span></button>
+          <button type="button" id="exportMaskToggle" title="ใช้กับไฟล์ XLSX / CSV ที่ Export · ข้อมูลบนหน้าจอไม่เปลี่ยน"><span class="exp-ico" id="exportMaskIcon">☐</span><span>ปิดบังเบอร์โทร / Line ในไฟล์<small>สำหรับไฟล์ที่ส่งต่อนอกทีม · เบอร์เหลือ 4 ตัวท้าย</small></span></button>
         </div>
       </div>
       <button id="exportButton" type="button" hidden></button>
@@ -1362,7 +1370,18 @@ body.night-mode .chip-row button{color:#E2E8F0;border-color:#3A4A63}
       </div>
       <div class="file-status">
         <span><span id="fileStatus">ยังไม่ได้อัปโหลดไฟล์</span> · <span id="dpStatus">ยังไม่มีฐาน DP / SHOP</span></span>
-        <span id="dataStatus" class="badge badge-gray">รอข้อมูล</span>
+        <span id="livePanel" hidden>
+          <span class="badge badge-green" id="liveBadge">Feishu</span>
+          <span id="liveStatus"></span>
+          <select id="liveEvery" class="lang-select" title="ตรวจข้อมูลใหม่จาก Feishu อัตโนมัติ">
+            <option value="1">ทุก 1 นาที</option><option value="5" selected>ทุก 5 นาที</option><option value="15">ทุก 15 นาที</option><option value="0">ไม่ตรวจอัตโนมัติ</option>
+          </select>
+          <button class="btn btn-sm" id="liveRefresh" type="button">รีเฟรชตอนนี้</button>
+        </span>
+        <span>
+          <span id="storeStatus" class="badge badge-red" hidden title="พื้นที่เก็บของเบราว์เซอร์เต็ม หรือเบราว์เซอร์ไม่อนุญาตให้บันทึก — การแก้ไขล่าสุดจะหายเมื่อปิดหน้านี้ ให้ Export XLSX เก็บไว้ก่อน">⚠ บันทึกลงเครื่องไม่สำเร็จ</span>
+          <span id="dataStatus" class="badge badge-gray">รอข้อมูล</span>
+        </span>
       </div>
     </div>
 
@@ -2142,16 +2161,17 @@ body.night-mode .chip-row button{color:#E2E8F0;border-color:#3A4A63}
         <div id="auditTestTable"></div>
       </div>
 
-      <div class="panel">
+      <div class="panel" id="duplicatePanel">
         <div class="panel-title-row">
           <div>
             <h3 class="panel-title">กลุ่มข้อมูลซ้ำ</h3>
             <p class="panel-subtitle">
-              จับความสัมพันธ์แบบ OR: เบอร์โทรซ้ำ หรือชื่อลูกค้าซ้ำ
+              จับความสัมพันธ์แบบ OR: เบอร์โทรซ้ำ หรือชื่อลูกค้าซ้ำ · กลุ่มที่ชื่อ / เบอร์ / DP ไม่ตรงกัน = "ควรตรวจสอบ" → กดเปรียบเทียบ แล้วยืนยันหรือแยกเป็นลูกค้าคนละราย
             </p>
           </div>
         </div>
         <div id="duplicateTable"></div>
+        <div id="duplicateSplitList"></div>
       </div>
 
       <div class="panel">
@@ -2277,6 +2297,16 @@ body.night-mode .chip-row button{color:#E2E8F0;border-color:#3A4A63}
             <button class="btn btn-danger" id="logClear" type="button">ล้าง Log</button>
           </div></div>
         <div id="logTable"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title-row"><div><h3 class="panel-title">ข้อมูลที่เก็บในเครื่องนี้</h3><p class="panel-subtitle">การแก้ไข · Audit Call · Action Plan · ฐาน DP · Log เก็บในเบราว์เซอร์ของเครื่องนี้เท่านั้น ไม่มีการเข้ารหัส · ใช้เครื่องร่วมกับผู้อื่นให้ "ล้างข้อมูล" หลังใช้งาน · ย้ายเครื่อง / กันข้อมูลหายให้ "สำรองข้อมูล"</p></div>
+          <div class="top-actions">
+            <input type="file" id="storeFileInput" accept=".json" hidden>
+            <button class="btn" id="storeBackup" type="button">สำรองข้อมูล (JSON)</button>
+            <button class="btn" id="storeRestore" type="button">กู้คืนจากไฟล์สำรอง</button>
+            <button class="btn btn-danger" id="storeClear" type="button">ล้างข้อมูลในเครื่องนี้</button>
+          </div></div>
+        <div id="storeTable"></div>
       </div>
     </section>
 
@@ -2454,6 +2484,57 @@ const App = {
   ]
 };
 
+/* ---------- ชื่อคอลัมน์ที่ฟอร์มเคยเปลี่ยน — แก้ที่นี่ที่เดียว ----------
+   ชื่อในไฟล์ (ซ้าย) → ชื่อมาตรฐานที่ Dashboard ใช้ (ขวา)
+   ฟอร์มเปลี่ยนชื่อหัวข้อเมื่อไหร่ ให้เพิ่มบรรทัดที่นี่ · เทียบแบบไม่สนช่องว่าง / ตัวพิมพ์เล็ก-ใหญ่ */
+const HeaderAlias = {
+  "ปัญหาที่ไม่เลือกส่ง VIP กับ J&T": "ปัญหาที่ไม่เลือกใช้ VIP กับ J&T",
+  "ปัญหาที่ไม่เลือกส่ง VIP กับ J&T-อื่น ๆ โปรดระบุ-ข้อความ": "ปัญหาที่ไม่เลือกใช้ VIP กับ J&T-อื่น ๆ โปรดระบุ-ข้อความ",
+  "แนวทางการแก้ไขปัญหา/ข้อเสนอแนะให้กับลูกค้า": "J&T มีวิธีแก้ไขปัญหาอย่างไรกับลูกค้าเจ้านี้",
+  "วันที่เข้าพบลูกค้า": "วันที่ลงพื้นที่",
+  "ชื่อร้านค้า": "ชื่อลูกค้า",
+  "เบอร์ติดต่อลูกค้า": "Tel.",
+  "สถานะปิดดีล VIP หลังจากเข้าพบ": "สถานะVIPหลังเข้าพบ"
+};
+
+// คอลัมน์ที่ Dashboard ใช้ แต่ไม่ต้องเตือนเมื่อไฟล์ไม่มี (ใส่ชื่อเมื่อฟอร์มรุ่นใหม่ตัดคอลัมน์นั้นออกโดยตั้งใจ)
+const OptionalColumns = [];
+// หัวข้อที่รู้จักแต่ไม่อยู่ในคลังคำศัพท์
+const KnownColumns = ["COD", "Line"];
+
+function normHeader(value) {
+  return String(value ?? "").normalize("NFKC").replace(/\s+/g, "").toLowerCase();
+}
+
+const HeaderLookup = new Map();
+[...Object.values(App.columns), ...App.problemColumns].forEach(name => HeaderLookup.set(normHeader(name), name));
+Object.entries(HeaderAlias).forEach(([alias, name]) => HeaderLookup.set(normHeader(alias), name));
+
+App.headerReport = { renamed:[], missing:[], unknown:[] };
+
+// เปลี่ยนหัวคอลัมน์ในไฟล์ให้เป็นชื่อมาตรฐาน + รายงานคอลัมน์ที่ Dashboard ใช้แต่หาไม่พบ
+function normalizeHeaders(rows) {
+  const headers = [...new Set(rows.flatMap(row => Object.keys(row)))];
+  const rename = new Map();
+  headers.forEach(header => {
+    const name = HeaderLookup.get(normHeader(header));
+    if (name && name !== header && !headers.includes(name)) rename.set(header, name);
+  });
+  const out = rename.size
+    ? rows.map(row => Object.fromEntries(Object.entries(row).map(([key, value]) => [rename.get(key) || key, value])))
+    : rows;
+
+  const finalHeaders = headers.map(header => rename.get(header) || header);
+  const used = [...new Set([...Object.values(App.columns), ...App.problemColumns, ...Object.values(ParcelCols)])];
+  const known = new Set([...used, ...KnownColumns, ...BASE_VOCAB_ROWS.filter(v => v[0] === "คอลัมน์").map(v => v[1])].map(normHeader));
+  App.headerReport = {
+    renamed:[...rename.entries()],
+    missing:used.filter(name => !finalHeaders.includes(name) && !OptionalColumns.includes(name)),
+    unknown:finalHeaders.filter(header => !known.has(normHeader(header)))
+  };
+  return out;
+}
+
 const PickupColumns = {
   "J&T": [App.columns.jtPickup, App.columns.jtPickupFM],
   "Flash": [App.columns.flashPickup],
@@ -2541,6 +2622,9 @@ function localISO(d) {
 function normalizeDate(value) {
   if (!value) return "";
   if (value instanceof Date && !isNaN(value)) return localISO(value);
+
+  // เลขวันที่ของ Excel ที่มาเป็นข้อความ (เช่นจาก Feishu API) → แปลงเป็นตัวเลขก่อน
+  if (typeof value === "string" && /^\d{5}(\.\d+)?$/.test(value.trim())) value = Number(value);
 
   if (typeof value === "number" && window.XLSX) {
     const parsed = XLSX.SSF.parse_date_code(value);
@@ -2775,53 +2859,152 @@ const AuditCallStatuses = ["ยังไม่โทร", "ถูกต้อง
 const AuditCallOk = ["ถูกต้อง", "ใกล้เคียง"];
 const AuditCallFalse = ["ข้อมูลเท็จ"];
 App.auditCalls = loadStore(AUDITCALL_KEY) || [];
+App.rowById = new Map();
 
-function auditCallOf(recordId) {
-  return App.auditCalls.find(c => c.recordId === recordId) || null;
+/* ---------- ลายนิ้วมือของรายการ: กันข้อมูลที่บันทึกไว้ปนข้ามไฟล์ ----------
+   编号 ของฟอร์มแต่ละชุดเริ่มนับ 1 ใหม่ → Record ID ซ้ำกันข้ามไฟล์ได้
+   การแก้ไข / Audit Call / การแยกข้อมูลซ้ำ จะใช้กับแถวก็ต่อเมื่อ Record ID ตรง "และ"
+   เวลาส่งฟอร์ม หรือ ชื่อ หรือ เบอร์ ตรงกับตอนที่บันทึก อย่างน้อย 1 อย่าง
+   (ไฟล์เดิมที่ Export ใหม่มีแถวเพิ่ม → ยังตรง · ไฟล์ชุดอื่นที่เลขซ้ำ → ไม่ตรง ไม่นำมาใช้) */
+// เวลาส่งฟอร์ม → yyyymmddhhmm ไม่ว่าต้นทางจะเป็น "2026/9/5 9:03:11" · "2026-09-05 09:03" หรือเลขวันที่ของ Excel
+function stampOf(value) {
+  const raw = String(value ?? "").trim();
+  if (/^\d{5}(\.\d+)?$/.test(raw) && window.XLSX) {
+    const d = XLSX.SSF.parse_date_code(Number(raw));
+    if (d) return `${d.y}${pad2(d.m)}${pad2(d.d)}${pad2(d.H)}${pad2(d.M)}`;
+  }
+  const m = raw.match(/(\d{4})\D(\d{1,2})\D(\d{1,2})(?:\D+(\d{1,2})\D(\d{1,2}))?/);
+  if (m) return `${m[1]}${pad2(m[2])}${pad2(m[3])}${pad2(m[4] || 0)}${pad2(m[5] || 0)}`;
+  return raw.replace(/\D/g, "").slice(0, 12);
+}
+
+function fingerprintOf(row) {
+  const phone = normalizePhone(row[App.columns.phone]);
+  return {
+    t: stampOf(row[App.columns.submitTime]),
+    n: isFilled(row[App.columns.name]) ? normalizeName(row[App.columns.name]) : "",
+    p: phoneStatus(phone) === "ok" ? phone : ""
+  };
+}
+
+function fpMatch(a, b) {
+  if (!a || !b) return true;
+  const comparable = ["t", "n", "p"].filter(k => a[k] && b[k]);
+  return !comparable.length || comparable.some(k => a[k] === b[k]);
+}
+
+// คีย์เก็บข้อมูลในเครื่อง = Record ID + เวลาส่งฟอร์ม (ไฟล์ต่างชุดจึงไม่ทับกัน)
+function recordKey(row) {
+  return row.__fp?.t ? `${row.__recordId}@${row.__fp.t}` : row.__recordId;
+}
+
+function callMatches(call, row) {
+  const fp = call.fp || { t:"", n:normalizeName(call.name), p:normalizePhone(call.phone) };
+  return fpMatch(fp, row.__fp) || fpMatch(fp, fingerprintOf(row));
+}
+
+function auditCallOf(row) {
+  if (!row) return null;
+  return App.auditCalls.find(c => c.recordId === row.__recordId && callMatches(c, row)) || null;
+}
+
+// Audit Call ของไฟล์ที่เปิดอยู่ (ยังไม่เปิดไฟล์ = ทั้งหมดที่บันทึกในเครื่อง)
+function currentAuditCalls() {
+  if (!App.rawRows.length) return App.auditCalls;
+  return App.auditCalls.filter(c => {
+    const row = App.rowById.get(c.recordId);
+    return !!row && callMatches(c, row);
+  });
 }
 
 function isFalseRecord(row) {
-  const call = auditCallOf(row.__recordId);
+  const call = auditCallOf(row);
   return !!call && AuditCallFalse.includes(call.status);
 }
 
 function isAuditOk(row) {
-  const call = auditCallOf(row.__recordId);
+  const call = auditCallOf(row);
   return !!call && AuditCallOk.includes(call.status);
 }
 
 function auditCallStats() {
-  const done = App.auditCalls.filter(c => c.status !== "ยังไม่โทร").length;
-  const ok = App.auditCalls.filter(c => AuditCallOk.includes(c.status)).length;
-  const bad = App.auditCalls.filter(c => AuditCallFalse.includes(c.status)).length;
-  return { total:App.auditCalls.length, done, ok, bad, open:App.auditCalls.length - done };
+  const calls = currentAuditCalls();
+  const done = calls.filter(c => c.status !== "ยังไม่โทร").length;
+  const ok = calls.filter(c => AuditCallOk.includes(c.status)).length;
+  const bad = calls.filter(c => AuditCallFalse.includes(c.status)).length;
+  return { total:calls.length, done, ok, bad, open:calls.length - done };
 }
 
 /* ---------- Local store (อยู่ในเครื่องนี้เท่านั้น ไม่ส่งออกนอกเครื่อง) ---------- */
 const EDIT_KEY = "r04-dashboard-edits";
 const ACTION_KEY = "r04-dashboard-actions";
 const OWNER_KEY = "r04-dashboard-owner";
+const DUPSPLIT_KEY = "r04-dashboard-dupsplit";
+const DUPOK_KEY = "r04-dashboard-dupok";
 
 function loadStore(key) {
   try { return JSON.parse(localStorage.getItem(key) || "null"); } catch (_) { return null; }
 }
 
+// คืน true เมื่อบันทึกสำเร็จจริง · ล้มเหลว (พื้นที่เต็ม / เบราว์เซอร์ไม่อนุญาต) → แจ้งผู้ใช้ ไม่เงียบ
+App.storeFailedAt = 0;
 function saveStore(key, value) {
-  try { localStorage.setItem(key, JSON.stringify(value)); } catch (_) {}
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch (error) {
+    console.error("saveStore", key, error);
+    const badge = $("storeStatus");
+    if (badge) badge.hidden = false;
+    if (Date.now() - App.storeFailedAt > 8000) {
+      App.storeFailedAt = Date.now();
+      setTimeout(() => showToast("⚠ บันทึกลงเครื่องไม่สำเร็จ (พื้นที่เต็ม หรือเบราว์เซอร์ไม่อนุญาต) — Export XLSX เก็บไว้ก่อนปิดหน้านี้"), 0);
+    }
+    return false;
+  }
 }
 
 App.edits = loadStore(EDIT_KEY) || {};
+App.dupSplit = loadStore(DUPSPLIT_KEY) || {};
+App.dupConfirmed = loadStore(DUPOK_KEY) || {};
 App.actionPlans = loadStore(ACTION_KEY) || [];
+App.foreignEdits = 0;
 App.pendingRows = [];
 App.noInfoRows = [];
 App.falseRows = [];
 
+function editMatches(edit, row) {
+  if (edit.fp) return fpMatch(edit.fp, row.__fp);
+  // รูปแบบเดิม (ก่อน v9): ค่าเดิมของฟิลด์ที่เคยแก้ และชื่อลูกค้า ต้องตรงกับค่าในไฟล์นี้
+  const nameField = App.columns.name;
+  const sameName = nameField in (edit.values || {}) || !isFilled(edit.name) ||
+    normalizeName(edit.name) === normalizeName(row[nameField]);
+  return sameName && Object.entries(edit.original || {}).every(([field, value]) =>
+    String(value ?? "").trim() === String(row[field] ?? "").trim());
+}
+
+// เรียกตอนอ่านไฟล์เท่านั้น (ค่าในแถวยังเป็นค่าจากไฟล์) · หลังจากนั้นใช้ row.__edit
+function editOf(row) {
+  const own = App.edits[recordKey(row)];
+  if (own && editMatches(own, row)) return own;
+  // คีย์ไม่ตรง (รูปแบบเดิม หรือเวลาส่งฟอร์มมาคนละรูปแบบ) → หาจาก Record ID แล้วเทียบลายนิ้วมือ
+  return Object.entries(App.edits).find(([key, edit]) =>
+    (edit.recordId ?? key) === row.__recordId && editMatches(edit, row))?.[1] || null;
+}
+
 function applyEdits(row) {
-  const edit = App.edits[row.__recordId];
+  row.__fp = fingerprintOf(row);   // จากค่าในไฟล์ ก่อนใช้การแก้ไข
+  const edit = editOf(row);
   if (!edit) return row;
   Object.entries(edit.values || {}).forEach(([field, value]) => { row[field] = value; });
   row.__edited = true;
+  row.__edit = edit;
   return row;
+}
+
+function isSplit(row) {
+  const split = App.dupSplit[recordKey(row)];
+  return !!split && fpMatch(split.fp, row.__fp);
 }
 
 /* ---------- Role columns (Sales / PIC / RM / SPV / Admin / Back Office) ---------- */
@@ -2830,7 +3013,7 @@ function splitPeople(value) {
   const raw = String(value ?? "").trim();
   if (!raw) return [];
 
-  // "สมชาย ,ใจดี" (เว้นวรรคหน้าคอมมา) = ชื่อ-นามสกุลคนเดียว · "Max, Nan" = 2 คน
+  // "เมธิณี ,ลิ่มดุลย์" (เว้นวรรคหน้าคอมมา) = ชื่อ-นามสกุลคนเดียว · "Max, Nan" = 2 คน
   const joined = raw.replace(/\s+,\s*/g, " ");
   return [...new Set(
     joined.split(/[,;/|&\n]+|\s+และ\s+/i)
@@ -2875,28 +3058,7 @@ $("fileInput").addEventListener("change", async event => {
   }
 
   try {
-    // Clear previous upload before reading the newly selected file.
-    App.rawRows = [];
-    App.activeRawRows = [];
-    App.excludedTestRows = [];
-    App.uniqueRows = [];
-    App.filteredRows = [];
-    App.duplicateGroups = [];
-    App.actionPlans = [];
-    App.workbook = null;
-    App.sourceSheetName = "";
-    App.fileName = file.name;
-    App.filterSel = {};
-    App.filterAll = {};
-    App.pendingRows = [];
-    App.noInfoRows = [];
-    App.falseRows = [];
-    ["searchFilter","dateFrom","dateTo"].forEach(id => $(id).value = "");
-    $("filterCount").textContent = "0";
-    Object.values(App.charts).forEach(chart => { try { chart.destroy(); } catch (_) {} });
-    App.charts = {};
-    renderAll();
-
+    resetData(file.name);
     $("fileStatus").textContent = `กำลังอ่าน ${file.name} ...`;
     $("dataStatus").className = "badge badge-orange";
     $("dataStatus").textContent = "กำลังตรวจสอบ";
@@ -2907,15 +3069,11 @@ $("fileInput").addEventListener("change", async event => {
       cellDates: true
     });
 
-    App.workbook = workbook;
-    App.fileName = file.name;
-
     const sourceSheet = workbook.SheetNames.find(name =>
       !/action\s*plan|audit/i.test(name)
     ) || workbook.SheetNames[0];
 
-    App.sourceSheetName = sourceSheet;
-
+    fixSheetRange(workbook.Sheets[sourceSheet]);
     const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sourceSheet], {
       defval: "",
       raw: false,
@@ -2924,56 +3082,199 @@ $("fileInput").addEventListener("change", async event => {
 
     if (!rows.length) throw new Error(`ไม่พบข้อมูลในชีต "${sourceSheet}"`);
 
-    const headers = Object.keys(rows[0] || {});
-    App.sourceHeaders = headers;
-    const missing = App.requiredColumns.filter(column => !headers.includes(column));
-    if (missing.length) {
-      throw new Error(`โครงสร้างไฟล์ไม่ตรงกับ R04: ไม่พบคอลัมน์ ${missing.join(", ")}`);
-    }
-
-    App.rawRows = rows.map((row, index) => {
-      if (isFilled(row[App.columns.province])) {
-        row[App.columns.province] = normProvince(row[App.columns.province]);
-      }
-      return applyEdits({
-        ...row,
-        __rawIndex: index,
-        __ctype: classifyCustomerType(row[App.columns.customerType]),
-        __recordId: text(row[App.columns.id]) !== "-"
-          ? text(row[App.columns.id])
-          : `ROW-${index + 2}`
-      });
-    });
-
-    loadExistingActionPlans(workbook);
-    buildDuplicateModel();
-    App.filteredRows = [...App.uniqueRows];
-
-    const newDps = autoAddDPs();
-    updateDpStatus();
-    buildFilterOptions();
-    applyFilters();
-    if (newDps) setTimeout(() => showToast(`พบ DP ใหม่ ${newDps} รหัสในข้อมูลเข้าพบ — เพิ่มในฐาน DP (รอยืนยัน) แล้ว`), 2800);
-
-    $("fileStatus").textContent =
-      `${file.name} · ${formatNumber(App.rawRows.length)} รายการดิบ · ${formatNumber(App.uniqueRows.length)} ลูกค้าใช้งานได้ · รอแก้ไข ${formatNumber(App.pendingRows.length)} · ทดสอบ ${formatNumber(App.excludedTestRows.length)}`;
-
-    $("dataStatus").className = "badge badge-green";
-    $("dataStatus").textContent = "พร้อมใช้งาน";
-
+    ingestRows(rows, { fileName:file.name, sheetName:sourceSheet, workbook });
     showToast("อัปโหลดและตรวจสอบข้อมูลเรียบร้อย");
-    logEvent("upload", `อัปโหลด ${file.name} · ${App.rawRows.length} รายการดิบ · ${App.uniqueRows.length} ลูกค้าใช้งานได้ · รอแก้ไข ${App.pendingRows.length} · ทดสอบ ${App.excludedTestRows.length}`);
+    logEvent("upload", `อัปโหลด ${file.name} · ${ingestSummary()}`);
   } catch (error) {
-    console.error(error);
-    $("fileStatus").textContent = "ไม่สามารถอ่านไฟล์ได้";
-    $("dataStatus").className = "badge badge-red";
-    $("dataStatus").textContent = "เกิดข้อผิดพลาด";
-    showToast(error.message || "เกิดข้อผิดพลาดในการอ่านไฟล์");
+    showLoadError(error);
   }
 });
 
+// Clear previous data before reading a new source.
+function resetData(fileName) {
+  App.rawRows = [];
+  App.activeRawRows = [];
+  App.excludedTestRows = [];
+  App.uniqueRows = [];
+  App.filteredRows = [];
+  App.duplicateGroups = [];
+  App.actionPlans = [];
+  App.rowById = new Map();
+  App.workbook = null;
+  App.sourceSheetName = "";
+  App.fileName = fileName;
+  App.filterSel = {};
+  App.filterAll = {};
+  App.pendingRows = [];
+  App.noInfoRows = [];
+  App.falseRows = [];
+  App.foreignEdits = 0;
+  App.headerReport = { renamed:[], missing:[], unknown:[] };
+  ["searchFilter","dateFrom","dateTo"].forEach(id => $(id).value = "");
+  $("filterCount").textContent = "0";
+  Object.values(App.charts).forEach(chart => { try { chart.destroy(); } catch (_) {} });
+  App.charts = {};
+  renderAll();
+}
+
+function showLoadError(error) {
+  console.error(error);
+  $("fileStatus").textContent = "ไม่สามารถอ่านข้อมูลได้";
+  $("dataStatus").className = "badge badge-red";
+  $("dataStatus").textContent = "เกิดข้อผิดพลาด";
+  showToast(error.message || "เกิดข้อผิดพลาดในการอ่านข้อมูล");
+}
+
+function ingestSummary() {
+  return `${App.rawRows.length} รายการดิบ · ${App.uniqueRows.length} ลูกค้าใช้งานได้ · รอแก้ไข ${App.pendingRows.length} · ทดสอบ ${App.excludedTestRows.length}`;
+}
+
+// ไฟล์ที่ Export จาก Feishu เขียนขอบเขตชีตเป็น "A1" ทั้งที่มีข้อมูลจริง → คำนวณขอบเขตจากเซลล์ที่มีอยู่
+function fixSheetRange(sheet) {
+  if (!sheet || Array.isArray(sheet["!data"])) return;
+  let maxRow = 0, maxCol = 0;
+  Object.keys(sheet).forEach(key => {
+    if (key[0] === "!") return;
+    const cell = XLSX.utils.decode_cell(key);
+    if (cell.r > maxRow) maxRow = cell.r;
+    if (cell.c > maxCol) maxCol = cell.c;
+  });
+  const range = sheet["!ref"] ? XLSX.utils.decode_range(sheet["!ref"]) : { s:{ r:0, c:0 }, e:{ r:0, c:0 } };
+  if (maxRow > range.e.r || maxCol > range.e.c) {
+    range.e.r = Math.max(range.e.r, maxRow);
+    range.e.c = Math.max(range.e.c, maxCol);
+    sheet["!ref"] = XLSX.utils.encode_range(range);
+  }
+}
+
+/* จุดรับข้อมูลจุดเดียว: ไฟล์ XLSX ที่อัปโหลด และ Feishu Bridge ใช้เส้นทางเดียวกัน
+   source = { fileName, sheetName, workbook (ถ้ามี), refresh (true = ดึงซ้ำจากแหล่งเดิม คงตัวกรองไว้) } */
+function ingestRows(inputRows, source) {
+  const rows = normalizeHeaders(inputRows);
+  const headers = [...new Set(rows.flatMap(row => Object.keys(row)))];
+  const missing = App.requiredColumns.filter(column => !headers.includes(column));
+  if (missing.length) {
+    throw new Error(`โครงสร้างไฟล์ไม่ตรงกับ R04: ไม่พบคอลัมน์ ${missing.join(", ")}`);
+  }
+
+  App.workbook = source.workbook || null;
+  App.fileName = source.fileName;
+  App.sourceSheetName = source.sheetName || "";
+
+  App.rawRows = rows.map((row, index) => {
+    if (isFilled(row[App.columns.province])) {
+      row[App.columns.province] = normProvince(row[App.columns.province]);
+    }
+    return applyEdits({
+      ...row,
+      __rawIndex: index,
+      __ctype: classifyCustomerType(row[App.columns.customerType]),
+      __recordId: text(row[App.columns.id]) !== "-"
+        ? text(row[App.columns.id])
+        : `ROW-${index + 2}`
+    });
+  });
+  App.rowById = new Map(App.rawRows.map(row => [row.__recordId, row]));
+  // การแก้ไขที่บันทึกในเครื่องแต่ไม่ตรงกับแถวใดของไฟล์นี้ = ของไฟล์ชุดอื่น
+  App.foreignEdits = Object.keys(App.edits).length - App.rawRows.filter(row => row.__edit).length;
+
+  loadExistingActionPlans(source.workbook);
+  buildDuplicateModel();
+  App.filteredRows = [...App.uniqueRows];
+
+  const newDps = autoAddDPs();
+  updateDpStatus();
+  buildFilterOptions();
+  applyFilters();
+  if (newDps) setTimeout(() => showToast(`พบ DP ใหม่ ${newDps} รหัสในข้อมูลเข้าพบ — เพิ่มในฐาน DP (รอยืนยัน) แล้ว`), 2800);
+
+  $("fileStatus").textContent =
+    `${source.fileName} · ${formatNumber(App.rawRows.length)} รายการดิบ · ${formatNumber(App.uniqueRows.length)} ลูกค้าใช้งานได้ · รอแก้ไข ${formatNumber(App.pendingRows.length)} · ทดสอบ ${formatNumber(App.excludedTestRows.length)}`;
+
+  $("dataStatus").className = "badge badge-green";
+  $("dataStatus").textContent = "พร้อมใช้งาน";
+
+  if (source.refresh) return;
+  const foreignCalls = App.auditCalls.length - currentAuditCalls().length;
+  const notes = [];
+  if (App.headerReport.missing.length) notes.push(`ไม่พบคอลัมน์ที่ Dashboard ใช้ ${App.headerReport.missing.length} คอลัมน์ (ฟอร์มอาจเปลี่ยนชื่อหัวข้อ)`);
+  if (App.foreignEdits || foreignCalls) notes.push(`ข้อมูลที่บันทึกไว้จากไฟล์ชุดอื่น ${App.foreignEdits + foreignCalls} รายการ ไม่ถูกนำมาใช้กับไฟล์นี้`);
+  if (notes.length) setTimeout(() => showToast(`⚠ ${notes.join(" · ")} — ดูรายละเอียดที่หน้า Audit`), newDps ? 5600 : 2800);
+}
+
+/* ---------- ข้อมูลสดจาก Feishu (ผ่าน Feishu Bridge ในเครื่องนี้) ----------
+   เปิด Dashboard ผ่าน Bridge (http://127.0.0.1:8765) → ดึงข้อมูลจาก Feishu Sheet ให้เอง และตรวจข้อมูลใหม่เป็นรอบ
+   เปิดจากไฟล์ตามปกติ → ส่วนนี้ไม่ทำงาน ใช้อัปโหลด XLSX เหมือนเดิม
+   App ID / Secret อยู่ที่ Bridge เท่านั้น ไม่อยู่ใน HTML · Dashboard ไม่ติดต่อ Feishu โดยตรง          */
+const LIVE_KEY = "r04-dashboard-live-every";
+App.live = { on:false, hash:"", timer:null, waiting:false };
+
+async function liveGet(path) {
+  const res = await fetch(path, { cache:"no-store" });
+  const body = await res.json();
+  if (!res.ok || !body.ok) throw new Error(body.error || `Bridge ตอบกลับ ${res.status}`);
+  return body;
+}
+
+function liveNote(message, tone = "green") {
+  $("liveBadge").className = `badge badge-${tone}`;
+  $("liveStatus").textContent = message;
+}
+
+async function liveRefresh(manual = false) {
+  // กำลังแก้ไข / เปิดหน้าต่างรายละเอียดอยู่ → รอรอบถัดไป ไม่วาดหน้าจอทับงานที่ทำค้าง
+  if (!manual && Layers.some(isLayerOpen)) return;
+  if (App.live.waiting) return;
+  App.live.waiting = true;
+  try {
+    const body = await liveGet(`/api/rows${manual ? "?fresh=1" : ""}`);
+    const time = String(body.fetchedAt || "").slice(11, 16);
+    const name = `Feishu · ${body.source?.title || "Sheet"}`;
+    if (body.hash !== App.live.hash) {
+      const first = !App.live.hash;
+      if (first) resetData(name);
+      ingestRows(body.rows, { fileName:name, sheetName:body.source?.sheet || "", refresh:!first });
+      App.live.hash = body.hash;
+      logEvent("upload", `${first ? "เชื่อม" : "ข้อมูลใหม่จาก"} Feishu · ${ingestSummary()}`);
+      if (!first) showToast(`ข้อมูลจาก Feishu เปลี่ยน — อัปเดตแล้ว (${formatNumber(App.rawRows.length)} รายการ)`);
+    } else if (manual) {
+      showToast("ข้อมูลใน Feishu ยังไม่เปลี่ยนจากรอบก่อน");
+    }
+    liveNote(`${body.source?.title || ""} · ดึงล่าสุด ${time}${body.mock ? " · ข้อมูลจำลอง" : ""}`);
+  } catch (error) {
+    console.error(error);
+    liveNote(`ดึงข้อมูลไม่สำเร็จ: ${error.message} — ข้อมูลบนจอเป็นรอบก่อนหน้า`, "red");
+    if (manual) showToast(error.message);
+  } finally {
+    App.live.waiting = false;
+  }
+}
+
+function liveSchedule() {
+  clearInterval(App.live.timer);
+  const minutes = Number($("liveEvery").value);
+  if (App.live.on && minutes > 0) App.live.timer = setInterval(() => liveRefresh(false), minutes * 60000);
+}
+
+async function liveInit() {
+  if (!/^https?:$/.test(location.protocol)) return;
+  try {
+    const status = await liveGet("/api/status");
+    if (!status.bridge) return;
+  } catch (_) { return; }   // ไม่ได้เปิดผ่าน Bridge
+  App.live.on = true;
+  $("livePanel").hidden = false;
+  const saved = loadStore(LIVE_KEY);
+  if (["0", "1", "5", "15"].includes(String(saved))) $("liveEvery").value = String(saved);
+  $("liveEvery").onchange = () => { saveStore(LIVE_KEY, $("liveEvery").value); liveSchedule(); };
+  $("liveRefresh").onclick = () => liveRefresh(true);
+  liveNote("กำลังดึงข้อมูลจาก Feishu ...", "orange");
+  await liveRefresh(true);
+  liveSchedule();
+}
+
 function loadExistingActionPlans(workbook) {
-  const sheetName = workbook.SheetNames.find(name =>
+  const sheetName = workbook?.SheetNames.find(name =>
     /action\s*plan/i.test(name)
   );
 
@@ -3035,6 +3336,9 @@ function buildDuplicateModel() {
   const nameOwner = new Map();
 
   rows.forEach((row, index) => {
+    row.__split = isSplit(row);
+    if (row.__split) return;   // ผู้ใช้ตรวจแล้วว่าเป็นลูกค้าคนละราย → ไม่รวมกับใคร
+
     const phone = normalizePhone(row[App.columns.phone]);
     const name = normalizeName(row[App.columns.name]);
 
@@ -3080,14 +3384,36 @@ function buildDuplicateModel() {
     App.uniqueRows.push(canonical);
 
     if (duplicate) {
+      const key = groupRows.map(recordKey).sort().join("+");
       App.duplicateGroups.push({
         id: groupId,
+        key,
         canonical,
         rows: groupRows,
-        reasons: duplicateReasons(groupRows)
+        reasons: duplicateReasons(groupRows),
+        review: duplicateReview(groupRows),
+        confirmed: !!App.dupConfirmed[key]
       });
     }
   });
+}
+
+/* กลุ่มที่ "ควรตรวจสอบ" ก่อนเชื่อว่าเป็นลูกค้ารายเดียวกัน: ชื่อ / เบอร์ / DP ในกลุ่มไม่ตรงกัน
+   (เบอร์เดียวกันแต่คนละร้าน · ชื่อเหมือนกันแต่คนละเบอร์) — ตรวจแล้วกด "ยืนยัน" หรือ "แยก" ได้ที่ปุ่มเปรียบเทียบ */
+function duplicateReview(rows) {
+  const distinct = values => new Set(values.filter(Boolean)).size;
+  const names = distinct(rows.map(row => normalizeName(row[App.columns.name])));
+  const phones = distinct(rows.map(row => normalizePhone(row[App.columns.phone])).filter(phone => !isPlaceholderPhone(phone)));
+  const dps = distinct(rows.map(row => isFilled(row[App.columns.dp]) ? text(row[App.columns.dp]) : ""));
+  const notes = [];
+  if (names > 1) notes.push(`ชื่อต่างกัน ${names} ชื่อ`);
+  if (phones > 1) notes.push(`เบอร์ต่างกัน ${phones} เบอร์`);
+  if (dps > 1) notes.push(`คนละ DP (${dps})`);
+  return notes;
+}
+
+function groupNeedsReview(group) {
+  return group.review.length > 0 && !group.confirmed;
 }
 
 function chooseCanonical(rows) {
@@ -4863,6 +5189,10 @@ function renderAudit() {
   const oddTypes = [...new Set(oddTypeRows.map(row => text(row[App.columns.customerType])))];
   const editedOk = App.activeRawRows.filter(row => row.__edited);
   const mismatch = provinceMismatchRows();
+  const report = App.headerReport;
+  const foreignCalls = App.auditCalls.length - currentAuditCalls().length;
+  const reviewGroups = App.duplicateGroups.filter(groupNeedsReview).length;
+  const splitRows = App.activeRawRows.filter(row => row.__split).length;
   const mktCount = App.activeRawRows.filter(row => deptGroupOf(row) === "mkt").length;
   const homeCount = App.activeRawRows.filter(row => deptGroupOf(row) === "home").length;
 
@@ -4898,11 +5228,24 @@ function renderAudit() {
         : "ไม่พบรายการ Remark = TEST",
       value:App.excludedTestRows.length, type:"blue" },
     { title:"โครงสร้างคอลัมน์",
-      detail: missingRequired.length ? `ขาดคอลัมน์สำคัญ ${missingRequired.join(", ")}` : "พบคอลัมน์สำคัญครบถ้วน",
-      value:missingRequired.length, type:missingRequired.length ? "red" : "green" },
-    { title:"ข้อมูลซ้ำ",
-      detail:`${App.duplicateGroups.length} กลุ่ม รวม ${duplicateRawRows} รายการดิบ (จับจากเบอร์ที่ใช้งานได้ หรือชื่อซ้ำ)`,
-      value:App.duplicateGroups.length, type:App.duplicateGroups.length ? "orange" : "green" },
+      detail: missingRequired.length ? `ขาดคอลัมน์สำคัญ ${missingRequired.join(", ")}`
+        : report.missing.length
+          ? `ไม่พบคอลัมน์ที่ Dashboard ใช้: ${report.missing.join(" · ")} — ตัวเลขส่วนนั้นจะว่าง ตรวจว่าฟอร์มเปลี่ยนชื่อหัวข้อหรือไม่` +
+            (report.unknown.length ? ` (หัวข้อในไฟล์ที่ Dashboard ยังไม่รู้จัก: ${report.unknown.join(" · ")})` : "")
+          : "พบคอลัมน์ที่ Dashboard ใช้ครบถ้วน" +
+            (report.renamed.length ? ` · จับคู่ชื่อหัวข้อรุ่นอื่นให้แล้ว ${report.renamed.length} คอลัมน์ (${report.renamed.map(([from]) => from).join(", ")})` : ""),
+      value:missingRequired.length + report.missing.length,
+      type:missingRequired.length ? "red" : report.missing.length ? "orange" : "green" },
+    { title:"ข้อมูลที่บันทึกไว้จากไฟล์ชุดอื่น",
+      detail: foreignCalls + App.foreignEdits
+        ? `การแก้ไข ${App.foreignEdits} · Audit Call ${foreignCalls} รายการ — ไม่ตรงกับรายการใดในไฟล์นี้ (Record ID อาจตรง แต่ชื่อ / เบอร์ / เวลาส่งฟอร์มไม่ตรง) จึงไม่นำมาใช้ · ยังเก็บไว้ในเครื่อง`
+        : "การแก้ไขและ Audit Call ที่ใช้อยู่เป็นของไฟล์นี้ทั้งหมด",
+      value:foreignCalls + App.foreignEdits, type:foreignCalls + App.foreignEdits ? "blue" : "green" },
+    { title:"ข้อมูลซ้ำ", go:"duplicatePanel",
+      detail:`${App.duplicateGroups.length} กลุ่ม รวม ${duplicateRawRows} รายการดิบ (จับจากเบอร์ที่ใช้งานได้ หรือชื่อซ้ำ)` +
+        ` · ควรตรวจสอบ ${reviewGroups} กลุ่ม (ชื่อ / เบอร์ / DP ในกลุ่มไม่ตรงกัน)` +
+        (splitRows ? ` · แยกเป็นลูกค้าคนละรายแล้ว ${splitRows} รายการ` : ""),
+      value:App.duplicateGroups.length, type:reviewGroups ? "orange" : App.duplicateGroups.length ? "blue" : "green" },
     { title:"การแบ่งประเภทลูกค้าตามแผนก",
       detail:`MKT / Network ${mktCount} รายการ · YOYI / HOME ${homeCount} รายการ`,
       value:mktCount + homeCount, type:"blue" },
@@ -4973,7 +5316,7 @@ const auditCols = {
 };
 
 function renderAuditPendingTable(editedOk) {
-  const editedCount = Object.keys(App.edits).length;
+  const editedCount = App.rawRows.filter(row => row.__edit).length;
   $("auditPendingNote").innerHTML =
     `ยังไม่แสดงใน Dashboard จนกว่าจะแก้ไขครบ · คลิกแถวเพื่อเพิ่ม/แก้ไขข้อมูล` +
     (editedOk.length ? ` · <span class="badge badge-green">แก้ไขแล้วนำกลับเข้า Dashboard ${formatNumber(editedOk.length)} รายการ</span>` : "") +
@@ -5009,11 +5352,21 @@ function calculateAuditScore(data) {
   return Math.max(0, Math.round(score));
 }
 
+function duplicateReviewHTML(group) {
+  if (group.confirmed) return `<span class="badge badge-green">ยืนยันแล้ว: ลูกค้ารายเดียวกัน</span>`;
+  if (!group.review.length) return `<span class="badge badge-gray">ชื่อและเบอร์ตรงกัน</span>`;
+  return `<span class="badge badge-orange">ควรตรวจสอบ</span><div class="small-list">${escapeHTML(group.review.join(" · "))}</div>`;
+}
+
 function renderDuplicateTable() {
+  renderSplitList();
   if (!App.duplicateGroups.length) {
     $("duplicateTable").innerHTML = `<div class="empty">ไม่พบกลุ่มข้อมูลซ้ำ</div>`;
     return;
   }
+
+  // กลุ่มที่ควรตรวจสอบขึ้นก่อน
+  const groups = [...App.duplicateGroups].sort((a, b) => groupNeedsReview(b) - groupNeedsReview(a));
 
   $("duplicateTable").innerHTML = `
     <div class="table-wrap">
@@ -5025,12 +5378,13 @@ function renderDuplicateTable() {
             <th>เบอร์โทร</th>
             <th>จำนวนรายการ</th>
             <th>เหตุผลที่จับซ้ำ</th>
+            <th>ผลตรวจ</th>
             <th>Record IDs</th>
             <th>ตรวจสอบ</th>
           </tr>
         </thead>
         <tbody>
-          ${App.duplicateGroups.map(group => `
+          ${groups.map(group => `
             <tr>
               <td><strong>${group.id}</strong></td>
               <td>${escapeHTML(text(group.canonical[App.columns.name]))}</td>
@@ -5039,6 +5393,7 @@ function renderDuplicateTable() {
               <td>${group.reasons.map(reason =>
                 `<span class="badge badge-blue">${escapeHTML(reason)}</span>`
               ).join(" ")}</td>
+              <td>${duplicateReviewHTML(group)}</td>
               <td>${group.rows.map(row =>
                 escapeHTML(row.__recordId)
               ).join(", ")}</td>
@@ -5055,6 +5410,41 @@ function renderDuplicateTable() {
   $("duplicateTable").querySelectorAll("[data-duplicate]").forEach(button => {
     button.onclick = () => openDuplicateModal(button.dataset.duplicate);
   });
+}
+
+// รายการที่ผู้ใช้แยกออกจากกลุ่มซ้ำ (นับเป็นลูกค้าของตัวเอง) — ยกเลิกได้
+function renderSplitList() {
+  const rows = App.activeRawRows.filter(row => row.__split);
+  $("duplicateSplitList").innerHTML = rows.length ? `
+    <p class="panel-subtitle" style="margin:14px 0 6px">แยกเป็นลูกค้าคนละรายแล้ว ${formatNumber(rows.length)} รายการ (นับเป็นลูกค้าของตัวเอง ไม่รวมกับรายการอื่น)</p>
+    <div class="chip-row">
+      ${rows.map(row => `<span class="badge badge-gray">Record ${escapeHTML(row.__recordId)} · ${escapeHTML(text(row[App.columns.name]))}
+        <button class="ap-btn" type="button" data-unsplit="${escapeHTML(row.__recordId)}" title="ยกเลิกการแยก กลับไปจับซ้ำตามปกติ">↩ ยกเลิก</button></span>`).join("")}
+    </div>` : "";
+  $("duplicateSplitList").querySelectorAll("[data-unsplit]").forEach(button => {
+    button.onclick = () => setSplit(App.rowById.get(button.dataset.unsplit), false);
+  });
+}
+
+function setSplit(row, split) {
+  if (!row) return;
+  if (split) App.dupSplit[recordKey(row)] = { fp:row.__fp, recordId:row.__recordId, at:new Date().toISOString() };
+  else delete App.dupSplit[recordKey(row)];
+  saveStore(DUPSPLIT_KEY, App.dupSplit);
+  logEvent("audit", `${split ? "แยก" : "ยกเลิกการแยก"} Record ${row.__recordId} (${text(row[App.columns.name])}) ${split ? "ออกจากกลุ่มข้อมูลซ้ำ" : ""}`);
+  closeLayer("duplicateModal");
+  rebuildModel();
+  showToast(split ? "แยกเป็นลูกค้าคนละรายแล้ว — ตัวเลขลูกค้าไม่ซ้ำถูกคำนวณใหม่" : "ยกเลิกการแยกแล้ว");
+}
+
+function setGroupConfirmed(group, confirmed) {
+  if (confirmed) App.dupConfirmed[group.key] = { at:new Date().toISOString(), by:App.userName || "" };
+  else delete App.dupConfirmed[group.key];
+  saveStore(DUPOK_KEY, App.dupConfirmed);
+  logEvent("audit", `${confirmed ? "ยืนยัน" : "ยกเลิกการยืนยัน"} ${group.id} เป็นลูกค้ารายเดียวกัน (Record ${group.rows.map(row => row.__recordId).join(", ")})`);
+  closeLayer("duplicateModal");
+  rebuildModel();
+  showToast(confirmed ? "ยืนยันแล้ว: ลูกค้ารายเดียวกัน" : "ยกเลิกการยืนยันแล้ว");
 }
 
 function renderFieldQualityTable(columns, rows) {
@@ -5293,19 +5683,22 @@ function saveDetailEdit() {
   }
 
   const wasPending = !!row.__issues?.length;
-  const store = App.edits[recordId] || { values:{}, original:{} };
+  const store = row.__edit || { values:{}, original:{} };
   Object.entries(changes).forEach(([field, value]) => {
     if (!(field in store.original)) store.original[field] = row[field] ?? "";
     store.values[field] = value;
     row[field] = value;
   });
   store.at = new Date().toISOString();
-  store.by = App.userName || RoleNames?.[App.role] || App.role || "";
   store.name = row[App.columns.name];
-  App.edits[recordId] = store;
+  store.recordId = recordId;
+  store.fp = row.__fp;   // ผูกกับรายการนี้ของไฟล์นี้ ไม่ใช่ Record ID อย่างเดียว
+  Object.keys(App.edits).forEach(key => { if (App.edits[key] === store) delete App.edits[key]; });   // ย้ายมาใช้คีย์ปัจจุบัน
+  App.edits[recordKey(row)] = store;
   saveStore(EDIT_KEY, App.edits);
   logEvent("edit", `แก้ไข Record ${recordId} (${text(row[App.columns.name])}): ${Object.keys(changes).join(", ")}`);
   row.__edited = true;
+  row.__edit = store;
 
   rebuildModel();
 
@@ -5323,9 +5716,24 @@ function rebuildModel() {
   applyFilters();
 }
 
+// ลูกค้าที่ Action Plan อ้างถึง: ต้องตรงทั้ง Record ID และชื่อ (Record ID ซ้ำกันข้ามไฟล์ได้)
+function actionRow(action) {
+  const [id, ...rest] = String(action["Record ID / Customer Key"] || "").split("|");
+  const row = App.rowById.get(id.trim());
+  if (!row) return null;
+  const name = normalizeName(rest.join("|"));
+  const names = [row[App.columns.name], row.__edit?.original?.[App.columns.name]].map(normalizeName);
+  return !name || names.includes(name) ? row : null;
+}
+
+// Record ID ตรงกับไฟล์นี้ แต่ชื่อลูกค้าไม่ตรง = Action Plan ของไฟล์ชุดอื่น
+function actionIsForeign(action) {
+  const id = String(action["Record ID / Customer Key"] || "").split("|")[0].trim();
+  return App.rowById.has(id) && !actionRow(action);
+}
+
 function relatedActionHTML(row) {
-  const actions = App.actionPlans.filter(action =>
-    String(action["Record ID / Customer Key"] || "").split("|")[0].trim() === row.__recordId);
+  const actions = App.actionPlans.filter(action => actionRow(action)?.__recordId === row.__recordId);
 
   if (!actions.length) return `<div class="empty">ยังไม่มี Action Plan</div>`;
 
@@ -5368,6 +5776,13 @@ function openDuplicateModal(groupId) {
           Record หลัก: ${escapeHTML(group.canonical.__recordId)}
         </span>
       </div>
+      <div style="margin-top:10px">
+        ${duplicateReviewHTML(group)}
+        <p class="panel-subtitle" style="margin-top:6px">
+          ตรวจแล้วเป็นลูกค้ารายเดียวกัน → กด "ยืนยัน" · เป็นคนละร้าน (เช่น ใช้เบอร์ร่วมกัน / ชื่อบังเอิญเหมือน) → กด "แยก" ที่ Record นั้น แล้วจะนับเป็นลูกค้าของตัวเอง
+        </p>
+        <button class="ap-btn" type="button" id="dupConfirm">${group.confirmed ? "↩ ยกเลิกการยืนยัน" : "✓ ยืนยัน: ลูกค้ารายเดียวกัน"}</button>
+      </div>
     </div>
 
     <div class="table-wrap">
@@ -5381,6 +5796,7 @@ function openDuplicateModal(groupId) {
                 ${row.__canonical
                   ? `<span class="badge badge-green">ข้อมูลหลัก</span>`
                   : ""}
+                <div><button class="ap-btn" type="button" data-split="${escapeHTML(row.__recordId)}">แยกเป็นลูกค้าคนละราย</button></div>
               </th>
             `).join("")}
           </tr>
@@ -5404,6 +5820,11 @@ function openDuplicateModal(groupId) {
            แสดงเฉพาะฟิลด์ที่มีค่าแตกต่างกัน
          </p>`}
   `;
+
+  $("dupConfirm").onclick = () => setGroupConfirmed(group, !group.confirmed);
+  $("duplicateModalBody").querySelectorAll("[data-split]").forEach(button => {
+    button.onclick = () => setSplit(App.rowById.get(button.dataset.split), true);
+  });
 
   $("overlay").classList.add("open");
   $("duplicateModal").classList.remove("hidden");
@@ -5595,7 +6016,7 @@ function saveActionFromModal(keepOpen) {
     const action = App.actionPlans.find(a => a["Action ID"] === App.actionEditing);
     Object.assign(action, values);
   } else {
-    App.actionPlans.push({ "Action ID":`ACT-${Date.now()}`, ...values, "วันที่สร้าง":todayISO() });
+    App.actionPlans.push({ "Action ID":`ACT-${Date.now()}`, ...values, "วันที่สร้าง":todayISO(), "ไฟล์ต้นทาง":App.fileName || "" });
   }
   persistActions();
   refreshActionViews();
@@ -5649,7 +6070,8 @@ $("saveAction").onclick = () => {
     "สถานะ": $("actionStatus").value,
     "รายละเอียด": detail,
     "วันที่สร้าง": todayISO(),
-    "อัปเดตล่าสุด": todayISO()
+    "อัปเดตล่าสุด": todayISO(),
+    "ไฟล์ต้นทาง": App.fileName || ""
   });
 
   ["actionRecord","actionOwner","actionDue","actionDetail"].forEach(id => $(id).value = "");
@@ -5690,7 +6112,7 @@ function actionTableHTML(actions, compact = false) {
           ${actions.map(action => `
             <tr class="clickable-row" data-action-id="${escapeHTML(action["Action ID"])}" title="คลิกเพื่อแก้ไข">
               ${compact ? "" : `<td>${cell(action["Action ID"])}</td>`}
-              <td>${cell(action["Record ID / Customer Key"])}</td>
+              <td>${cell(action["Record ID / Customer Key"])}${actionIsForeign(action) ? ` <span class="badge badge-gray" title="Record ID ตรงกับไฟล์นี้ แต่ชื่อลูกค้าไม่ตรง — เป็น Action Plan ของไฟล์ชุดอื่น">ไฟล์ชุดอื่น</span>` : ""}</td>
               ${compact ? "" : `<td>${cell(action["แผนก"])}</td>`}
               <td style="white-space:pre-line">${cell(action["รายละเอียด"])}</td>
               <td>${cell(action["เจ้าของงาน"])}</td>
@@ -5739,8 +6161,29 @@ function cleanRow(row) {
   clean["สถานะข้อมูล (Audit)"] = auditStatusLabel(row);
   clean["ปัญหาที่ต้องแก้"] = (row.__issues || []).join(", ");
   clean["แก้ไขใน Dashboard"] = row.__edited ? "ใช่" : "";
-  clean["Audit Call"] = row.__false ? "ข้อมูลเท็จ" : row.__auditOk ? "ผ่าน" : (auditCallOf(row.__recordId)?.status || "");
-  return clean;
+  clean["Audit Call"] = row.__false ? "ข้อมูลเท็จ" : row.__auditOk ? "ผ่าน" : (auditCallOf(row)?.status || "");
+  return App.exportMask ? maskContact(clean) : clean;
+}
+
+/* ---------- ปิดบังข้อมูลติดต่อในไฟล์ Export (สำหรับไฟล์ที่ส่งต่อนอกทีม) ----------
+   เปิด/ปิดที่เมนู Export · เบอร์โทรเหลือ 4 ตัวท้าย · Line ถูกซ่อน · ข้อมูลบนหน้าจอไม่เปลี่ยน */
+const MASK_KEY = "r04-dashboard-exportmask";
+const ContactColumns = { phone:["Tel.", "เบอร์โทร", "Phone"], hide:["Line"] };
+App.exportMask = loadStore(MASK_KEY) === true;
+
+function maskPhone(value) {
+  const digits = String(value ?? "").replace(/\D/g, "");
+  return digits.length >= 7 ? `${"x".repeat(digits.length - 4)}${digits.slice(-4)}` : (digits ? "xxxx" : "");
+}
+
+function maskIf(record) {
+  return App.exportMask ? maskContact(record) : record;
+}
+
+function maskContact(record) {
+  ContactColumns.phone.forEach(column => { if (column in record) record[column] = maskPhone(record[column]); });
+  ContactColumns.hide.forEach(column => { if (isFilled(record[column])) record[column] = "(ปิดบัง)"; });
+  return record;
 }
 
 function filterConditionRows() {
@@ -5758,58 +6201,6 @@ function filterConditionRows() {
   });
   out.push({ "เงื่อนไข":"จำนวนลูกค้าหลังกรอง", "ค่า":App.filteredRows.length });
   return out;
-}
-
-/* ---------- Report การเปลี่ยนแปลง (สำหรับอัปเดต Feishu / ไฟล์ต้นฉบับ) ----------
-   ชีต 1 "Report แถวที่แก้": 1 แถวต่อ record ที่เปลี่ยน · คอลัมน์เรียงตามไฟล์ต้นฉบับทุกคอลัมน์ (ค่าปัจจุบัน) + แถวต้นฉบับ (Excel) + คอลัมน์ที่แก้ → ก๊อปวางทับแถวเดิมได้เลย
-   ชีต 2 "Report รายการแก้ไข": 1 แถวต่อ 1 ค่าที่เปลี่ยน (คอลัมน์ · ค่าเดิม → ค่าใหม่ · ใคร · เมื่อไหร่)
-   ชีต 3 "Report Audit Call": ผลโทรตรวจสอบ (ข้อมูลเท็จ / ถูกต้อง ฯลฯ) */
-function changeReportSheets(scopeDept) {
-  const inScope = row => !scopeDept || deptGroupOf(row) === scopeDept;
-  const byId = new Map(App.rawRows.map(r => [String(r.__recordId), r]));
-  const headers = App.sourceHeaders || [];
-  const fmtAt = iso => iso ? String(iso).replace("T", " ").slice(0, 19) : "";
-  const changed = Object.entries(App.edits).filter(([id, e]) => byId.has(String(id)) && inScope(byId.get(String(id))) && Object.keys(e.values || {}).length);
-  const fullRows = changed.map(([id, e]) => {
-    const row = byId.get(String(id));
-    const out = { "แถวต้นฉบับ (Excel)": row.__rawIndex != null ? row.__rawIndex + 2 : "", "Record ID": id, "คอลัมน์ที่แก้": Object.keys(e.values).join(", "), "แก้ไขโดย": e.by || "", "แก้ไขเมื่อ": fmtAt(e.at) };
-    headers.forEach(h => { out[h] = row[h] ?? ""; });
-    return out;
-  }).sort((a, b) => (a["แถวต้นฉบับ (Excel)"] || 0) - (b["แถวต้นฉบับ (Excel)"] || 0));
-  const longRows = changed.flatMap(([id, e]) => {
-    const row = byId.get(String(id));
-    return Object.entries(e.values).map(([field, value]) => ({
-      "แถวต้นฉบับ (Excel)": row.__rawIndex != null ? row.__rawIndex + 2 : "", "Record ID": id, "ชื่อลูกค้า": text(row[App.columns.name]), "เบอร์โทร": text(row[App.columns.phone]),
-      "กลุ่มแผนก": DeptLabel[deptGroupOf(row)] || "", "คอลัมน์": field, "ค่าเดิม (ตอนอัปโหลด)": e.original?.[field] ?? "", "ค่าใหม่": value,
-      "แก้ไขโดย": e.by || "", "แก้ไขเมื่อ": fmtAt(e.at)
-    }));
-  }).sort((a, b) => (a["แถวต้นฉบับ (Excel)"] || 0) - (b["แถวต้นฉบับ (Excel)"] || 0));
-  const callRows = App.auditCalls.filter(c => c.status && c.status !== "ยังไม่โทร" && byId.has(String(c.recordId)) && inScope(byId.get(String(c.recordId)))).map(c => {
-    const row = byId.get(String(c.recordId));
-    return { "แถวต้นฉบับ (Excel)": row.__rawIndex != null ? row.__rawIndex + 2 : "", "Record ID": c.recordId, "ชื่อลูกค้า": c.name, "เบอร์โทร": c.phone, "จังหวัด": c.province,
-      "ผู้บันทึกข้อมูล": c.recorder, "สถานะการโทร": c.status, "ผลต่อ Dashboard": isFalseRecord(row) ? "ตัดออก (ข้อมูลเท็จ)" : row.__auditOk ? "ผ่าน" : "", "หมายเหตุ": c.note || "", "ผู้โทร": c.by || "", "วันที่โทร": c.at || "" };
-  });
-  return { fullRows, longRows, callRows };
-}
-
-function appendChangeReport(output, scopeDept) {
-  const { fullRows, longRows, callRows } = changeReportSheets(scopeDept);
-  const guide = [{ "คำแนะนำ": "ชีตนี้มีเฉพาะแถวที่มีการแก้ไขในระบบ · คอลัมน์ตั้งแต่ช่อง F เป็นต้นไปเรียงตามไฟล์ต้นฉบับ (ค่าปัจจุบันหลังแก้) · ใช้ \"แถวต้นฉบับ (Excel)\" หาแถวใน Feishu แล้วก๊อปช่วง F→ท้ายวางทับได้ทันที" }];
-  XLSX.utils.book_append_sheet(output, XLSX.utils.json_to_sheet(fullRows.length ? fullRows : [{ "ผลการตรวจ": "ยังไม่มีการแก้ไขข้อมูล" }]), "Report แถวที่แก้");
-  XLSX.utils.book_append_sheet(output, XLSX.utils.json_to_sheet(longRows.length ? longRows : [{ "ผลการตรวจ": "ยังไม่มีการแก้ไขข้อมูล" }]), "Report รายการแก้ไข");
-  XLSX.utils.book_append_sheet(output, XLSX.utils.json_to_sheet(callRows.length ? callRows : [{ "ผลการตรวจ": "ยังไม่มีผล Audit Call" }]), "Report Audit Call");
-  XLSX.utils.book_append_sheet(output, XLSX.utils.json_to_sheet(guide), "Report วิธีใช้");
-  return fullRows.length + callRows.length;
-}
-
-function exportChangeReport() {
-  const scopeDept = App.currentPage === "home" ? "home" : ["mkt", "network"].includes(App.currentPage) ? "mkt" : "";
-  const output = XLSX.utils.book_new();
-  const n = appendChangeReport(output, scopeDept);
-  XLSX.utils.book_append_sheet(output, XLSX.utils.json_to_sheet(filterConditionRows()), "Conditions");
-  const label = scopeDept === "home" ? "YOYI_HOME" : scopeDept === "mkt" ? "MKT_Network" : "ทั้งหมด";
-  XLSX.writeFile(output, `R04_Report_การเปลี่ยนแปลง_${label}_${todayISO()}.xlsx`);
-  showToast(n ? `Export Report การเปลี่ยนแปลง ${formatNumber(n)} รายการแล้ว` : "ยังไม่มีการแก้ไข / Audit Call — Export ชีตว่างให้แล้ว");
 }
 
 function safeFileName(value) {
@@ -5886,39 +6277,42 @@ $("exportButton").onclick = () => {
   XLSX.utils.book_append_sheet(output, XLSX.utils.json_to_sheet(pendingScoped.length
     ? pendingScoped.map(cleanRow) : [{"ผลการตรวจ":"ไม่มีรายการรอแก้ไข"}]), "Audit รอแก้ไข");
 
-  const callsScoped = App.auditCalls.filter(c => idInScope(c.recordId));
+  // เฉพาะ Audit Call / การแก้ไข ของไฟล์ที่เปิดอยู่ — ของไฟล์ชุดอื่นไม่ถูกส่งออกไปด้วย
+  const callsScoped = currentAuditCalls().filter(c => idInScope(c.recordId));
   XLSX.utils.book_append_sheet(output, XLSX.utils.json_to_sheet(callsScoped.length
-    ? callsScoped.map(c => ({
+    ? callsScoped.map(c => maskIf({
         "รอบ": c.batch, "วันที่สุ่ม": c.sampledAt, "Record ID": c.recordId, "ชื่อลูกค้า": c.name, "เบอร์โทร": c.phone,
         "จังหวัด": c.province, "ผู้บันทึกข้อมูล": c.recorder, "สถานะการโทร": c.status, "หมายเหตุ": c.note, "ผู้โทร": c.by, "วันที่โทร": c.at
       }))
     : [{"ผลการตรวจ":"ยังไม่มีการสุ่ม Audit Call"}]), "Audit Call");
 
-  const editRows = Object.entries(App.edits).filter(([recordId]) => idInScope(recordId)).flatMap(([recordId, edit]) =>
-    Object.entries(edit.values || {}).map(([field, value]) => ({
-      "Record ID": recordId, "ชื่อลูกค้า": edit.name || "", "ฟิลด์": field,
-      "ค่าเดิม": edit.original?.[field] ?? "", "ค่าใหม่": value, "แก้ไขเมื่อ": edit.at || ""
+  const maskField = (field, value) => App.exportMask && field === App.columns.phone ? maskPhone(value) : value;
+  const editRows = App.rawRows.filter(row => row.__edit && inScope(row)).flatMap(row =>
+    Object.entries(row.__edit.values || {}).map(([field, value]) => ({
+      "Record ID": row.__recordId, "ชื่อลูกค้า": row.__edit.name || "", "ฟิลด์": field,
+      "ค่าเดิม": maskField(field, row.__edit.original?.[field] ?? ""), "ค่าใหม่": maskField(field, value), "แก้ไขเมื่อ": row.__edit.at || ""
     })));
   XLSX.utils.book_append_sheet(output, XLSX.utils.json_to_sheet(editRows.length
     ? editRows : [{"ผลการตรวจ":"ยังไม่มีการแก้ไขข้อมูล"}]), "Audit Edits");
 
+  // Action Plan ของไฟล์ชุดอื่น (Record ID ตรงแต่ชื่อไม่ตรง) ไม่ถูกส่งออกไปกับไฟล์นี้
+  const actionsScoped = App.actionPlans.filter(a =>
+    !actionIsForeign(a) && (!scopeActionDepts || scopeActionDepts.includes(a["แผนก"])));
   XLSX.utils.book_append_sheet(
     output,
-    XLSX.utils.json_to_sheet((scopeActionDepts ? App.actionPlans.filter(a => scopeActionDepts.includes(a["แผนก"])) : App.actionPlans).length
-      ? (scopeActionDepts ? App.actionPlans.filter(a => scopeActionDepts.includes(a["แผนก"])) : App.actionPlans)
-      : [{"สถานะ":"ยังไม่มี Action Plan"}]
-    ),
+    XLSX.utils.json_to_sheet(actionsScoped.length ? actionsScoped : [{"สถานะ":"ยังไม่มี Action Plan"}]),
     "Action Plan"
   );
 
   const auditRows = App.duplicateGroups.filter(group => group.rows.some(inScope)).flatMap(group =>
-    group.rows.map(row => ({
+    group.rows.map(row => maskIf({
       "Duplicate Group": group.id,
       "Record ID": row.__recordId,
       "Canonical": row.__canonical ? "Yes" : "No",
       "Customer Name": row[App.columns.name],
       "Phone": row[App.columns.phone],
       "Reasons": group.reasons.join(", "),
+      "Review": group.confirmed ? "ยืนยันแล้ว: ลูกค้ารายเดียวกัน" : group.review.length ? `ควรตรวจสอบ: ${group.review.join(", ")}` : "",
       "Number of Records": group.rows.length
     }))
   );
@@ -5932,7 +6326,7 @@ $("exportButton").onclick = () => {
     "Audit Duplicate"
   );
 
-  const testAuditRows = App.excludedTestRows.filter(inScope).map(row => ({
+  const testAuditRows = App.excludedTestRows.filter(inScope).map(row => maskIf({
     "Record ID": row.__recordId,
     "Customer Name": row[App.columns.name],
     "Phone": row[App.columns.phone],
@@ -5948,8 +6342,6 @@ $("exportButton").onclick = () => {
     ),
     "Audit TEST Excluded"
   );
-
-  appendChangeReport(output, scopeDept);
 
   const baseName = App.fileName.replace(/\.(xlsx|xls)$/i,"");
   XLSX.writeFile(output, `${baseName}_R04_Audited${scope.label ? "_" + safeFileName(scope.label) : ""}.xlsx`);
@@ -6487,7 +6879,7 @@ function scorecards(rows, roleFilter) {
       duplicates:list.filter(r => r.__duplicate).length,
       pending:pending.get(p.name) || 0,
       auditOk:list.filter(r => r.__auditOk).length,
-      auditSampled:list.filter(r => auditCallOf(r.__recordId) && auditCallOf(r.__recordId).status !== "ยังไม่โทร").length,
+      auditSampled:list.filter(r => auditCallOf(r) && auditCallOf(r).status !== "ยังไม่โทร").length,
       auditFalse:App.falseRows.filter(r => recorderNames(r).includes(p.name)).length,
       quality
     };
@@ -6702,8 +7094,10 @@ function exportCSV() {
   const rows = scope.rows.map(cleanRow);
   if (!rows.length) { showToast("ไม่มีรายการให้ Export"); return; }
   const headers = [...new Set(rows.flatMap(r => Object.keys(r)))];
+  // ข้อความที่ขึ้นต้นด้วย = + - @ อาจถูก Excel ตีความเป็นสูตร → นำหน้าด้วย ' ให้เป็นข้อความ (ตัวเลข / เบอร์โทร ไม่แตะ)
   const esc = v => {
-    const s = String(v ?? "");
+    let s = String(v ?? "");
+    if (/^[=+\-@\t\r]/.test(s) && !/^[+-]?[\d\s.,()-]+$/.test(s)) s = `'${s}`;
     return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const csv = "﻿" + [headers.map(esc).join(","), ...rows.map(r => headers.map(h => esc(r[h])).join(","))].join("\r\n");
@@ -6848,14 +7242,30 @@ document.addEventListener("click", event => {
   $("expWrap").classList.remove("open");
   const kind = item.dataset.export;
   if (kind !== "png" && kind !== "pdf" && !App.rawRows.length) { showToast("กรุณาอัปโหลด XLSX ก่อน Export"); return; }
+  if (kind === "xlsx-full") {
+    // ป้องกันการส่งออกเกินจำเป็นโดยไม่ตั้งใจ (ไม่ใช่ระบบสิทธิ์ — ไฟล์ HTML เดียวไม่มี Login)
+    if (["viewer", "sales"].includes(App.role)) { showToast(`บทบาท ${RoleNames[App.role]} ใช้ "ตามตัวกรอง" ได้ · Export ครบทุกชีตสำหรับ Boss / ผู้ดูแลระบบ / แผนก`); return; }
+    const pii = App.exportMask ? "เบอร์โทรถูกปิดบังตามที่ตั้งค่าไว้" : "รวมเบอร์โทรลูกค้าแบบเต็ม";
+    if (!confirm(`Export ครบทุกชีต = ข้อมูลดิบทุกแถว ${formatNumber(App.rawRows.length)} รายการ (รวมรายการทดสอบ / รอแก้ไข) + Audit Call + ประวัติแก้ไข + Action Plan\n${pii}\n\nใช้สำหรับเก็บ / ตรวจสอบภายในทีม · ถ้าจะส่งต่อให้คนอื่น แนะนำ "XLSX ตามตัวกรอง" และเปิด "ปิดบังเบอร์โทร"\n\nต้องการ Export ต่อหรือไม่?`)) return;
+  }
   if (kind !== "pdf") logEvent("export", `${kind.toUpperCase()} · ${$("pageTitle").textContent} · ${App.filteredRows.length} ลูกค้า`);
   if (kind === "xlsx-full") $("exportButton").click();
-  else if (kind === "report") exportChangeReport();
   else if (kind === "xlsx-filtered") { const sc = exportScope(); exportRowsXLSX(sc.rows, sc.label ? `ตามตัวกรอง_${sc.label}` : "ตามตัวกรอง"); }
   else if (kind === "csv") exportCSV();
   else if (kind === "png") exportPagePNG();
   else if (kind === "pdf") exportPagePDF();
 });
+
+function renderExportMask() {
+  $("exportMaskIcon").textContent = App.exportMask ? "☑" : "☐";
+}
+$("exportMaskToggle").onclick = () => {
+  App.exportMask = !App.exportMask;
+  saveStore(MASK_KEY, App.exportMask);
+  renderExportMask();
+  showToast(App.exportMask ? "เปิดการปิดบังเบอร์โทร / Line ในไฟล์ Export แล้ว" : "ปิดการปิดบังแล้ว — ไฟล์ Export จะมีเบอร์โทรเต็ม");
+};
+renderExportMask();
 
 /* ---------- ฐาน DP / SHOP ----------
    เก็บในเครื่องนี้ (localStorage) · อัปโหลดทับ / แก้ทีละแถว / Export กลับเป็น Master ได้
@@ -8291,13 +8701,13 @@ const BASE_VOCAB_ROWS = [
 "ป้าย",
 "น้ำหนักสินค้า",
 "Parcel weight",
-"商品重量"
+"包裹重量"
 ],
 [
 "ป้าย",
 "ประเภทสินค้า",
 "Product type",
-"商品类型"
+"包裹类型"
 ],
 [
 "ป้าย",
@@ -8633,13 +9043,13 @@ const BASE_VOCAB_ROWS = [
 "ป้าย",
 "ปัญหา First Mile",
 "First Mile issues",
-"首公里问题"
+"揽收问题"
 ],
 [
 "ป้าย",
 "ปัญหา Last Mile",
 "Last Mile issues",
-"末公里问题"
+"末端派件问题"
 ],
 [
 "ป้าย",
@@ -9563,7 +9973,7 @@ const BASE_VOCAB_ROWS = [
 "ป้าย",
 "ประเภทสินค้า × ประเภทลูกค้า",
 "Product type × customer type",
-"商品类型 × 客户类型"
+"包裹类型 × 客户类型"
 ],
 [
 "ป้าย",
@@ -9587,7 +9997,7 @@ const BASE_VOCAB_ROWS = [
 "ป้าย",
 "สรุปประเภทสินค้า",
 "Product type summary",
-"商品类型汇总"
+"包裹类型汇总"
 ],
 [
 "ป้าย",
@@ -10469,13 +10879,13 @@ const BASE_VOCAB_ROWS = [
 "ป้าย",
 "ยอดคู่แข่ง (ที่เลือก)",
 "Competitor volume (selected)",
-"竞品件量（所选）"
+"竞品件量（ ADO ）"
 ],
 [
 "ป้าย",
 "ลูกค้าที่มีปัญหา FM/LM (ที่เลือก)",
 "Customers with FM/LM issues (selected)",
-"有首/末公里问题的客户（所选）"
+"存在 FM/LM 问题的客户(已选)"
 ],
 [
 "ป้าย",
@@ -10541,25 +10951,25 @@ const BASE_VOCAB_ROWS = [
 "ป้าย",
 "เข้ารับ FM",
 "FM pickup",
-"首公里揽收"
+"揽收不及时"
 ],
 [
 "ป้าย",
 "ตีกลับ FM",
 "FM return",
-"首公里退件"
+"退件不及时"
 ],
 [
 "ป้าย",
 "ประสานงาน FM",
 "FM coordination",
-"首公里协调"
+"协调无效"
 ],
 [
 "ป้าย",
 "ปลายทาง LM",
 "LM delivery",
-"末公里派送"
+"末端派送"
 ],
 [
 "ป้าย",
@@ -11591,7 +12001,7 @@ const BASE_VOCAB_ROWS = [
 "ค่าข้อมูล",
 "ไม่รู้ช่องทางการติดต่อการซื้อขาย JT_HOME",
 "Doesn't know how to contact JT_HOME sales",
-"不知道 JT_HOME 的联系渠道"
+"不知道申请开通HOME渠道"
 ],
 [
 "ค่าข้อมูล",
@@ -13276,14 +13686,14 @@ const BASE_VOCAB_ROWS = [
 [
 "ป้าย",
 "จากคอลัมน์ \"พัสดุ TT ใช้ J&T หรือไม่?\"",
-"From column \"พัสดุ TT ใช้ J&T หรือไม่?\"",
-"来自列 \"พัสดุ TT ใช้ J&T หรือไม่?\""
+"From column \"TT parcels use J&T?\"",
+"来自列「TT 包裹是否用 J&T？」"
 ],
 [
 "ป้าย",
 "จากคอลัมน์ \"พัสดุ VIP ใช้ J&T หรือไม่?\"",
-"From column \"พัสดุ VIP ใช้ J&T หรือไม่?\"",
-"来自列 \"พัสดุ VIP ใช้ J&T หรือไม่?\""
+"From column \"VIP parcels use J&T?\"",
+"来自列「VIP 包裹是否用 J&T？」"
 ],
 [
 "ป้าย",
@@ -13297,18 +13707,194 @@ const BASE_VOCAB_ROWS = [
 "Overall score = customers 30 + deals (closed 1 · negotiating 0.5) 25 + competitor volume found 15 (vs. best person) + data quality 20 + Audit Call 10 (passed ÷ called · not sampled = 5) · Click a column header to sort · Click a row to see customers",
 "综合得分 = 客户 30 + 成交（签约 1 · 洽谈 0.5）25 + 发现的竞对件量 15（与最佳人员相比）+ 数据质量 20 + Audit Call 10（通过 ÷ 已致电 · 未抽中 = 5）· 点击表头排序 · 点击行查看客户名单"
 ],
-[
-"ปุ่ม",
-"Report การเปลี่ยนแปลง",
-"Change report",
-"变更报告"
-],
-[
-"ป้าย",
-"เฉพาะแถวที่แก้ไข / Audit Call · คอลัมน์เรียงตามไฟล์ต้นฉบับ สำหรับอัปเดต Feishu",
-"Edited rows / Audit Call only · columns in source-file order, for updating Feishu",
-"仅已修改行 / Audit Call · 列顺序与源文件一致，用于更新 Feishu"
-]
+/* ----- v9: ตรวจข้อมูลซ้ำ · ข้อมูลในเครื่อง · Export · Feishu ----- */
+["ป้าย", "ผลตรวจ", "Review", "核查结果"],
+["ป้าย", "ควรตรวจสอบ", "Needs review", "需核查"],
+["ป้าย", "ชื่อและเบอร์ตรงกัน", "Name and phone match", "名称和电话一致"],
+["ป้าย", "ยืนยันแล้ว: ลูกค้ารายเดียวกัน", "Confirmed: same customer", "已确认：同一客户"],
+["ป้าย", "ชื่อต่างกัน {#} ชื่อ", "{#} different names", "{#} 个不同名称"],
+["ป้าย", "เบอร์ต่างกัน {#} เบอร์", "{#} different phone numbers", "{#} 个不同电话"],
+["ป้าย", "คนละ DP ({#})", "Different DPs ({#})", "不同 DP（{#}）"],
+["ปุ่ม", "✓ ยืนยัน: ลูกค้ารายเดียวกัน", "✓ Confirm: same customer", "✓ 确认：同一客户"],
+["ปุ่ม", "↩ ยกเลิกการยืนยัน", "↩ Undo confirmation", "↩ 取消确认"],
+["ปุ่ม", "แยกเป็นลูกค้าคนละราย", "Split as a separate customer", "拆分为不同客户"],
+["ปุ่ม", "↩ ยกเลิก", "↩ Undo", "↩ 撤销"],
+["ป้าย", "แยกเป็นลูกค้าคนละรายแล้ว {#} รายการ (นับเป็นลูกค้าของตัวเอง ไม่รวมกับรายการอื่น)", "{#} records split as separate customers (each counted on its own)", "已拆分为不同客户 {#} 条（各自单独计数）"],
+["ป้าย", "จับความสัมพันธ์แบบ OR: เบอร์โทรซ้ำ หรือชื่อลูกค้าซ้ำ", "Matched by OR: same phone or same customer name", "按「或」匹配：电话相同或客户名称相同"],
+["ป้าย", "กลุ่มที่ชื่อ / เบอร์ / DP ไม่ตรงกัน = \"ควรตรวจสอบ\" → กดเปรียบเทียบ แล้วยืนยันหรือแยกเป็นลูกค้าคนละราย", "Groups whose name / phone / DP differ = \"Needs review\" → click Compare, then confirm or split", "名称 / 电话 / DP 不一致的组 =「需核查」→ 点击比较，然后确认或拆分"],
+["ป้าย", "ข้อมูลที่บันทึกไว้จากไฟล์ชุดอื่น", "Saved data from other files", "其他文件的已保存数据"],
+["ป้าย", "การแก้ไขและ Audit Call ที่ใช้อยู่เป็นของไฟล์นี้ทั้งหมด", "All edits and Audit Calls in use belong to this file", "当前使用的修改和 Audit Call 均属于本文件"],
+["ป้าย", "พบคอลัมน์ที่ Dashboard ใช้ครบถ้วน", "All columns used by the dashboard were found", "看板所需的列均已找到"],
+["ป้าย", "ข้อมูลที่เก็บในเครื่องนี้", "Data stored on this device", "本机存储的数据"],
+["ป้าย", "ข้อมูล", "Data", "数据"],
+["ป้าย", "คีย์", "Key", "键"],
+["ป้าย", "จำนวนรายการ", "Items", "条数"],
+["ป้าย", "ขนาด (KB)", "Size (KB)", "大小（KB）"],
+["ป้าย", "การตั้งค่าหน้าจอ", "Display settings", "界面设置"],
+["ป้าย", "การแก้ไขข้อมูล", "Data edits", "数据修改"],
+["ป้าย", "คำศัพท์ที่เพิ่มเอง", "Custom vocabulary", "自定义词汇"],
+["ป้าย", "การแยกข้อมูลซ้ำ", "Duplicate splits", "重复拆分"],
+["ป้าย", "การยืนยันข้อมูลซ้ำ", "Duplicate confirmations", "重复确认"],
+["ป้าย", "ขอบเขตจังหวัด (แผนที่)", "Province boundaries (map)", "府界（地图）"],
+["ปุ่ม", "สำรองข้อมูล (JSON)", "Back up (JSON)", "备份（JSON）"],
+["ปุ่ม", "กู้คืนจากไฟล์สำรอง", "Restore from backup", "从备份恢复"],
+["ปุ่ม", "ล้างข้อมูลในเครื่องนี้", "Clear data on this device", "清除本机数据"],
+["ป้าย", "ยังไม่มีข้อมูลที่เก็บในเครื่องนี้", "No data stored on this device yet", "本机暂无存储数据"],
+["ป้าย", "⚠ บันทึกลงเครื่องไม่สำเร็จ", "⚠ Could not save to this device", "⚠ 无法保存到本机"],
+["ปุ่ม", "ปิดบังเบอร์โทร / Line ในไฟล์", "Mask phone / Line in exported files", "导出文件中隐藏电话 / Line"],
+["ป้าย", "สำหรับไฟล์ที่ส่งต่อนอกทีม", "For files shared outside the team", "用于对外发送的文件"],
+["ป้าย", "เบอร์เหลือ 4 ตัวท้าย", "Only the last 4 digits are kept", "电话仅保留后 4 位"],
+["ป้าย", "ไฟล์ชุดอื่น", "Other file", "其他文件"],
+["ปุ่ม", "รีเฟรชตอนนี้", "Refresh now", "立即刷新"],
+["ป้าย", "ทุก {#} นาที", "Every {#} min", "每 {#} 分钟"],
+["ป้าย", "ไม่ตรวจอัตโนมัติ", "No auto check", "不自动检查"],
+["ป้าย", "ข้อมูลจำลอง", "Mock data", "模拟数据"],
+["ป้าย", "ดึงล่าสุด {*}", "Last fetched {*}", "最近获取 {*}"],
+["ป้าย", "กำลังดึงข้อมูลจาก Feishu ...", "Fetching data from Feishu ...", "正在从飞书获取数据 ..."],
+/* ----- อัปเดตภาษาจีน 2026-10-05 ----- */
+["ป้าย", "ควรตรวจสอบ {#} กลุ่ม (ชื่อ / เบอร์ / DP ในกลุ่มไม่ตรงกัน)", "{#} groups need review (name / phone / DP differ within group)", "需核查 {#} 组（组内名称 / 电话 / DP 不一致）"],
+["ป้าย", "รวม {#} KB (เบราว์เซอร์ให้พื้นที่ประมาณ {#} KB)", "Total {#} KB (browser allows about {#} KB)", "共 {#} KB（浏览器约可用 {#} KB）"],
+["ป้าย", "ไฟล์ XLSX ที่อัปโหลดไม่ถูกเก็บ ต้องอัปโหลดใหม่ทุกครั้งที่เปิด", "Uploaded XLSX files are not stored — upload again each time you open", "上传的 XLSX 文件不会保存，每次打开需重新上传"],
+["ป้าย", "สร้างสรุปแล้ว — คัดลอกไปวางใน GPT / Gemini ได้เลย", "Summary created — copy and paste into GPT / Gemini", "摘要已生成 — 可直接复制粘贴到 GPT / Gemini"],
+["ป้าย", "中文", "Chinese", "中文"],
+["ป้าย", "การแก้ไข · Audit Call · Action Plan · ฐาน DP · Log เก็บในเบราว์เซอร์ของเครื่องนี้เท่านั้น ไม่มีการเข้ารหัส · ใช้เครื่องร่วมกับผู้อื่นให้ \"ล้างข้อมูล\" หลังใช้งาน · ย้ายเครื่อง / กันข้อมูลหายให้ \"สำรองข้อมูล\"", "Edits · Audit Call · Action Plan · DP master · Log are stored only in this browser, unencrypted · On a shared computer, use \"Clear data\" after use · To move computers / avoid data loss, use \"Back up data\"", "修改 · Audit Call · 行动计划 · DP 主数据 · 日志仅保存在本机浏览器中，未加密 · 与他人共用电脑时，使用后请点「清除数据」 · 换电脑 / 防止数据丢失请点「备份数据」"],
+["ป้าย", "Log เก็บในเบราว์เซอร์ของเครื่องนี้เท่านั้น ไม่มีการเข้ารหัส", "Log is stored only in this browser, unencrypted", "日志仅保存在本机浏览器中，未加密"],
+["ป้าย", "ใช้เครื่องร่วมกับผู้อื่นให้ \"ล้างข้อมูล\" หลังใช้งาน", "On a shared computer, use \"Clear data\" after use", "与他人共用电脑时，使用后请点「清除数据」"],
+["ป้าย", "ย้ายเครื่อง / กันข้อมูลหายให้ \"สำรองข้อมูล\"", "To move computers / avoid data loss, use \"Back up data\"", "换电脑 / 防止数据丢失请点「备份数据」"],
+["ป้าย", "จับคู่ชื่อหัวข้อรุ่นอื่นให้แล้ว {#} คอลัมน์ ({*})", "Matched {#} columns from other form versions ({*})", "已自动匹配其他版本的列名 {#} 列（{*}）"],
+["ป้าย", "รายละเอียดลูกค้า", "Customer details", "客户详情"],
+["ป้าย", "เปลี่ยนภาษาเป็น {*}", "Language changed to {*}", "语言已切换为 {*}"],
+["ป้าย", "โหลดขอบเขตจังหวัดแล้ว ({#} จังหวัด R04)", "Province boundaries loaded ({#} R04 provinces)", "已加载府界（R04 共 {#} 个府）"],
+["ป้าย", "ลูกค้าซ้ำนับครั้งเดียว", "Duplicate customers counted once", "重复客户只计一次"],
+["ป้าย", "จังหวัดอ่านจากฐาน DP ก่อน", "Province taken from the DP master first", "府优先取自 DP 主数据"],
+["ป้าย", "ลูกค้าซ้ำนับครั้งเดียว · จังหวัดอ่านจากฐาน DP ก่อน", "Duplicate customers counted once · Province taken from the DP master first", "重复客户只计一次 · 府优先取自 DP 主数据"],
+["ป้าย", "ตรวจข้อมูลใหม่จาก Feishu อัตโนมัติ", "Auto-check Feishu for new data", "自动检查飞书新数据"],
+["ป้าย", "พื้นที่เก็บของเบราว์เซอร์เต็ม หรือเบราว์เซอร์ไม่อนุญาตให้บันทึก — การแก้ไขล่าสุดจะหายเมื่อปิดหน้านี้ ให้ Export XLSX เก็บไว้ก่อน", "Browser storage is full or saving is blocked — recent edits will be lost when this page closes; Export XLSX first", "浏览器存储已满或不允许保存 — 关闭本页后最近的修改会丢失，请先导出 XLSX"],
+["ป้าย", "มุมมองตามหน้าที่ (กำหนดเมนูที่เห็น · บันทึกใน Log) — ไม่ใช่ระบบสิทธิ์ ทุกบทบาทเปิดไฟล์เดียวกันได้", "Role view (sets visible menus · recorded in Log) — not a permission system; every role can open the same file", "按职责显示（决定可见菜单 · 记录在日志中）— 不是权限系统，所有角色都能打开同一文件"],
+["ป้าย", "ใช้กับไฟล์ XLSX / CSV ที่ Export · ข้อมูลบนหน้าจอไม่เปลี่ยน", "Applies to exported XLSX / CSV files · On-screen data is unchanged", "适用于导出的 XLSX / CSV 文件 · 屏幕上的数据不变"],
+["ป้าย", "(ปิดบัง)", "(Masked)", "（已隐藏）"],
+["ป้าย", "(หัวข้อในไฟล์ที่ Dashboard ยังไม่รู้จัก: {#})", "(Columns in the file not yet recognised by the dashboard: {#})", "（文件中看板尚未识别的列：{#}）"],
+["ป้าย", "(ไม่ระบุ)", "(Not specified)", "（未注明）"],
+["ป้าย", "{#} รายการ — แผนที่ใช้จังหวัดตามฐาน DP", "{#} records — the map uses the province from the DP master", "{#} 条 — 地图按 DP 主数据中的府显示"],
+["ป้าย", "Audit รอแก้ไข", "Audit pending fixes", "Audit 待修正"],
+["ป้าย", "Bridge ตอบกลับ {#}", "Bridge responded {#}", "Bridge 返回 {#}"],
+["ป้าย", "Export {#} รายการแล้ว", "Exported {#} records", "已导出 {#} 条"],
+["ป้าย", "Export XLSX (ข้อมูลทั้งหมด + ตามตัวกรอง + Audit + การแก้ไข + Action Plan) แล้ว", "Exported XLSX (all data + filtered + Audit + edits + Action Plan)", "已导出 XLSX（全部数据 + 筛选结果 + Audit + 修改记录 + 行动计划）"],
+["ป้าย", "Record หลัก: {*}", "Primary record: {*}", "主记录：{*}"],
+["ป้าย", "เพิ่ม DP ใหม่จากข้อมูลเข้าพบ {#}", "Added {#} new DPs from visit data", "从拜访数据新增 DP {#} 个"],
+["ป้าย", "แยกเป็นลูกค้าคนละรายแล้ว {#} รายการ", "{#} records split into separate customers", "已拆分为不同客户 {#} 条"],
+["ป้าย", "กรุณาระบุ Record และรายละเอียด Action Plan", "Please specify the record and the Action Plan details", "请填写记录和行动计划详情"],
+["ป้าย", "กรุณาเลือกไฟล์ XLSX หรือ XLS", "Please select an XLSX or XLS file", "请选择 XLSX 或 XLS 文件"],
+["ป้าย", "การแก้ไข {#} · Audit Call {#} รายการ — ไม่ตรงกับรายการใดในไฟล์นี้ (Record ID อาจตรง แต่ชื่อ / เบอร์ / เวลาส่งฟอร์มไม่ตรง) จึงไม่นำมาใช้ · ยังเก็บไว้ในเครื่อง", "{#} edits · {#} Audit Call records — do not match any record in this file (Record ID may match but name / phone / submit time differ), so they are not applied · still kept on this device", "修改 {#} 条 · Audit Call {#} 条 — 与本文件中任何记录都不匹配（Record ID 可能相同，但名称 / 电话 / 提交时间不同），因此未使用 · 仍保存在本机"],
+["ป้าย", "กำลังอ่าน {*} ...", "Reading {*} ...", "正在读取 {*} ..."],
+["ป้าย", "ของไฟล์นี้", "of this file", "本文件"],
+["ป้าย", "ข้อมูลจาก Feishu เปลี่ยน — อัปเดตแล้ว ({#} รายการ)", "Feishu data changed — updated ({#} records)", "飞书数据已变更 — 已更新（{#} 条）"],
+["ป้าย", "ข้อมูลที่บันทึกไว้จากไฟล์ชุดอื่น {#} รายการ ไม่ถูกนำมาใช้กับไฟล์นี้", "{#} saved records from another file were not applied to this file", "来自其他文件的已保存数据 {#} 条，未应用于本文件"],
+["ป้าย", "ข้อมูลใน Feishu ยังไม่เปลี่ยนจากรอบก่อน", "Feishu data has not changed since the last fetch", "飞书数据与上次相比没有变化"],
+["ป้าย", "ข้อมูลไม่ถูกต้อง รอดำเนินการแก้ไข", "Invalid data — pending correction", "数据有误，待修正"],
+["ป้าย", "คลิกเพื่อดูรายละเอียด", "Click for details", "点击查看详情"],
+["ป้าย", "คลิกเพื่อแก้ไข", "Click to edit", "点击编辑"],
+["ป้าย", "ควรตรวจสอบ: {#}", "Needs review: {#}", "需核查：{#}"],
+["ป้าย", "ค่า", "Value", "值"],
+["ป้าย", "ค่าที่ไม่รู้จัก: {*}", "Unrecognised values: {*}", "未识别的值：{*}"],
+["คอลัมน์", "ค่าเดิม", "Old value", "原值"],
+["คอลัมน์", "ค่าใหม่", "New value", "新值"],
+["ปุ่ม", "ค้นหา", "Search", "搜索"],
+["ป้าย", "จำนวนลูกค้าหลังกรอง", "Customers after filtering", "筛选后客户数"],
+["คอลัมน์", "ชื่อร้านค้า", "Shop name", "店铺名称"],
+["ป้าย", "ดึงข้อมูลไม่สำเร็จ: {*} — ข้อมูลบนจอเป็นรอบก่อนหน้า", "Fetch failed: {*} — the screen shows the previous data", "获取数据失败：{*} — 屏幕显示的是上一次的数据"],
+["ป้าย", "ตรวจแล้วเป็นลูกค้ารายเดียวกัน → กด \"ยืนยัน\" · เป็นคนละร้าน (เช่น ใช้เบอร์ร่วมกัน / ชื่อบังเอิญเหมือน) → กด \"แยก\" ที่ Record นั้น แล้วจะนับเป็นลูกค้าของตัวเอง", "Same customer after review → press \"Confirm\" · Different shops (e.g. shared phone / names alike by chance) → press \"Split\" on that record and it is counted as its own customer", "核查后为同一客户 → 点击「确认」 · 为不同店铺（如共用电话 / 名称巧合相同）→ 在该记录上点击「拆分」，将单独计为一个客户"],
+["ปุ่ม", "ยืนยัน", "Confirm", "确认"],
+["ปุ่ม", "แยก", "Split", "拆分"],
+["ป้าย", "ตามตัวกรอง", "Filtered", "按筛选"],
+["ป้าย", "ทดสอบระบบ / ฝึกสอน (ไม่แสดงใน Dashboard)", "System test / training (not shown in the dashboard)", "系统测试 / 培训（不在看板中显示）"],
+["ป้าย", "ทั้งหมดในเครื่องนี้", "Everything on this device", "本机全部"],
+["ป้าย", "นับจากยอดพัสดุฝั่งของลูกค้าเอง (HOME = ยอดคีย์ · MKT/Network = ยอด VIP + TT) และช่องขนส่งที่ร้านใช้ · % = สัดส่วนต่อลูกค้าทั้งหมดในมุมมองนี้", "Counted from each customer's own-side volume (HOME = keyed volume · MKT/Network = VIP + TT volume) and the carriers-used field · % = share of all customers in this view", "按客户所属一方的件量统计（HOME = 录单量 · MKT/Network = VIP + TT 件量）及店铺使用的快递字段 · % = 占本视图全部客户的比例"],
+["ป้าย", "บันทึกแล้ว แต่ยังไม่ครบ: {*}", "Saved, but still incomplete: {*}", "已保存，但仍不完整：{*}"],
+["คอลัมน์", "ปัญหาที่ไม่เลือกส่ง VIP กับ J&T", "Why not J&T for VIP", "不选择 J&T VIP 的原因"],
+["คอลัมน์", "ปัญหาที่ไม่เลือกส่ง VIP กับ J&T-อื่น ๆ โปรดระบุ-ข้อความ", "Why not J&T for VIP - other (please specify) - text", "不选择 J&T VIP 的原因 - 其他（请注明）- 文本"],
+["คอลัมน์", "แนวทางการแก้ไขปัญหา/ข้อเสนอแนะให้กับลูกค้า", "Solutions / recommendations for the customer", "问题解决方案 / 给客户的建议"],
+["คอลัมน์", "ขนส่งคู่แข่งที่ใช้TT", "Competitor carriers used for TT", "TT 使用的竞品快递"],
+["คอลัมน์", "ขนส่งที่ใช้TT", "Carriers used for TT", "TT 使用的快递"],
+["คอลัมน์", "ยอดคู่แข่ง (HOME)", "Competitor volume (HOME)", "竞品件量（HOME）"],
+["ปุ่ม", "ปิดบังเบอร์โทร", "Mask phone numbers", "隐藏电话号码"],
+["ป้าย", "ผลการกรอง", "Filter results", "筛选结果"],
+["ป้าย", "ผลการตรวจ", "Check result", "核查结果"],
+["คอลัมน์", "ผู้โทร", "Caller", "致电人"],
+["ป้าย", "ผ่าน", "Passed", "通过"],
+["ป้าย", "มีรหัส", "Has J&T code", "有 J&T 编码"],
+["ป้าย", "ยกเลิกการยืนยันแล้ว", "Confirmation cancelled", "已取消确认"],
+["ปุ่ม", "ยกเลิกการแยก กลับไปจับซ้ำตามปกติ", "Undo split — back to normal duplicate matching", "取消拆分，恢复正常查重"],
+["ป้าย", "ยกเลิกการแยกแล้ว", "Split undone", "已取消拆分"],
+["ป้าย", "แยกเป็นลูกค้าคนละรายแล้ว — ตัวเลขลูกค้าไม่ซ้ำถูกคำนวณใหม่", "Split into separate customers — unique customer counts recalculated", "已拆分为不同客户 — 已重新计算去重客户数"],
+["ป้าย", "ยังไม่มีการสุ่ม Audit Call", "No Audit Call sample yet", "尚未抽取 Audit Call"],
+["ป้าย", "ยังไม่มีการแก้ไขข้อมูล", "No data edits yet", "尚无数据修改"],
+["ปุ่ม", "ลบ Action Plan {*}", "Delete Action Plan {*}", "删除行动计划 {*}"],
+["ป้าย", "วันที่ลงพื้นที่: {*}", "Visit date: {*}", "外访日期：{*}"],
+["คอลัมน์", "วันที่สร้าง", "Created", "创建日期"],
+["คอลัมน์", "วันที่ออกรายงาน", "Report date", "报告日期"],
+["คอลัมน์", "วันที่เข้าพบลูกค้า", "Customer visit date", "拜访客户日期"],
+["คอลัมน์", "วันที่โทร", "Call date", "致电日期"],
+["คอลัมน์", "สถานะข้อมูล (Audit)", "Data status (Audit)", "数据状态（Audit）"],
+["คอลัมน์", "สถานะปิดดีล VIP หลังจากเข้าพบ", "VIP deal status after visit", "拜访后 VIP 成交状态"],
+["ปุ่ม", "สั้น", "Short", "简短"],
+["ปุ่ม", "สำรองข้อมูล", "Back up data", "备份数据"],
+["ปุ่ม", "ล้างข้อมูล", "Clear data", "清除数据"],
+["ปุ่ม", "สุ่มหมายเลข", "Draw numbers", "随机抽号"],
+["ป้าย", "หลักการเลือกข้อมูลหลัก", "How the primary record is chosen", "主记录选择规则"],
+["ป้าย", "เลือกรายการวันที่ล่าสุดก่อน จากนั้นพิจารณาความครบถ้วน และ Record ID ตามลำดับ", "Latest date first, then completeness, then Record ID", "先选日期最新的记录，再依次看完整度和 Record ID"],
+["คอลัมน์", "อัปเดตล่าสุด", "Last updated", "最近更新"],
+["ป้าย", "เกิดข้อผิดพลาด", "An error occurred", "发生错误"],
+["ป้าย", "เกิดข้อผิดพลาดในการอ่านข้อมูล", "Error while reading data", "读取数据时出错"],
+["คอลัมน์", "เงื่อนไข", "Condition", "条件"],
+["คอลัมน์", "เบอร์ติดต่อลูกค้า", "Customer phone", "客户联系电话"],
+["ปุ่ม", "เพิ่ม", "Add", "添加"],
+["ป้าย", "เพิ่ม Action Plan แล้ว (บันทึกในเครื่อง + รวมใน Export XLSX)", "Action Plan added (saved on this device + included in XLSX export)", "已添加行动计划（保存在本机 + 包含在 XLSX 导出中）"],
+["ปุ่ม", "แก้ไข", "Edit", "编辑"],
+["คอลัมน์", "แก้ไขเมื่อ", "Edited at", "修改时间"],
+["ป้าย", "แก้ไขใน Dashboard", "Edited in dashboard", "在看板中修改"],
+["หน้า/เมนู", "แผนที่ R04", "R04 Map", "R04 地图"],
+["ป้าย", "แผนที่ R04 แบบช่อง", "R04 tile map", "R04 方块地图"],
+["ป้าย", "และ", "and", "和"],
+["ป้าย", "โครงสร้างไฟล์ไม่ตรงกับ R04: ไม่พบคอลัมน์ {*}", "File structure does not match R04: missing columns {*}", "文件结构与 R04 不符：缺少列 {*}"],
+["ปุ่ม", "ใช่", "Yes", "是"],
+["คอลัมน์", "ไฟล์ต้นทาง", "Source file", "源文件"],
+["ป้าย", "ไฟล์ไม่ถูกต้อง", "Invalid file", "文件无效"],
+["ป้าย", "ไม่พบข้อมูลเวลาเข้ารับของ {*}", "No pickup time data for {*}", "未找到 {*} 的揽收时间数据"],
+["ป้าย", "ไม่พบข้อมูลในชีต \"{*}\"", "No data found in sheet \"{*}\"", "工作表「{*}」中没有数据"],
+["ป้าย", "ไม่พบคอลัมน์ที่ Dashboard ใช้ {#} คอลัมน์ (ฟอร์มอาจเปลี่ยนชื่อหัวข้อ)", "{#} columns used by the dashboard were not found (the form may have renamed headers)", "未找到看板使用的 {#} 列（表单可能更改了列名）"],
+["ป้าย", "ไม่พบคอลัมน์ที่ Dashboard ใช้: {*} — ตัวเลขส่วนนั้นจะว่าง ตรวจว่าฟอร์มเปลี่ยนชื่อหัวข้อหรือไม่", "Columns used by the dashboard not found: {*} — those figures will be blank; check whether the form renamed headers", "未找到看板使用的列：{*} — 相关数字将为空，请检查表单是否更改了列名"],
+["ป้าย", "ไม่มีรายการตามตัวกรอง", "No records match the filters", "没有符合筛选条件的记录"],
+["ป้าย", "ไม่มีลูกค้า YOYI / HOME", "No YOYI / HOME customers", "无 YOYI / HOME 客户"],
+["ค่าข้อมูล", "ไม่สะดวก/ไม่ให้เบอร์", "Unwilling to give phone", "不便提供 / 不提供电话"],
+["ป้าย", "ไม่สามารถอ่านข้อมูลได้", "Unable to read data", "无法读取数据"],
+["ป้าย", "⚠ {*} — ดูรายละเอียดที่หน้า Audit", "⚠ {*} — see details on the Audit page", "⚠ {*} — 详见 Audit 页面"],
+["ป้าย", "⚠ บันทึกลงเครื่องไม่สำเร็จ (พื้นที่เต็ม หรือเบราว์เซอร์ไม่อนุญาต) — Export XLSX เก็บไว้ก่อนปิดหน้านี้", "⚠ Could not save on this device (storage full or blocked by the browser) — Export XLSX before closing this page", "⚠ 无法保存到本机（存储已满或浏览器不允许）— 关闭本页前请先导出 XLSX"],
+["สถานที่", "กทม", "Bangkok", "曼谷"],
+["สถานที่", "กรุงเทพ", "Bangkok", "曼谷"],
+["สถานที่", "กรุงเทพฯ", "Bangkok", "曼谷"],
+["ค่าข้อมูล", "{#} น.", "{#}", "{#}"],
+["ค่าข้อมูล", "หนังสือและเครื่องเขียน", "Books & stationery", "图书文具"],
+["ค่าข้อมูล", "ของใช้ในบ้านและชีวิตประจำวัน", "Household & daily necessities", "家居日用品"],
+["ค่าข้อมูล", "อาหารเสริม", "Dietary supplements", "保健品"],
+["ค่าข้อมูล", "แก้วน้ำ(เหล็ก)", "Steel tumblers", "不锈钢水杯"],
+["ค่าข้อมูล", "✅ปิดดีลและรอเซ็นสัญญา/等签合同", "✅Deal closed, awaiting contract", "✅已成交，等待签约"],
+["ค่าข้อมูล", "🌕อยู่ระหว่างเจรจา/正在洽谈中", "🌕Negotiating", "🌕正在洽谈中"],
+["ค่าข้อมูล", "ส่งให้โฮม", "Sends via HOME", "交给 HOME 寄件"],
+["สถานที่", "บึงคำพร้อย", "Bueng Kham Phroi", "Bueng Kham Phroi"],
+["สถานที่", "ประชาธิปัตย์", "Prachathipat", "Prachathipat"],
+["สถานที่", "ท้ายเกาะ", "Thai Ko", "Thai Ko"],
+["สถานที่", "บ้านใหญ่", "Ban Yai", "Ban Yai"],
+["สถานที่", "คลองหนึ่ง", "Khlong Nueng", "Khlong Nueng"],
+["สถานที่", "ไทรม้า", "Sai Ma", "Sai Ma"],
+["สถานที่", "บางคูวัด", "Bang Khu Wat", "Bang Khu Wat"],
+["สถานที่", "สะพานไทย", "Saphan Thai", "Saphan Thai"],
+["สถานที่", "กลัดหลวง", "Klat Luang", "Klat Luang"],
+["สถานที่", "คลองสวนพลู", "Khlong Suan Phlu", "Khlong Suan Phlu"],
+["สถานที่", "กระทุ่มล้ม", "Krathum Lom", "Krathum Lom"],
+["สถานที่", "กุยบุรี", "Kui Buri", "归武里"],
+["สถานที่", "บางกรวย", "Bang Kruai", "挽桂"],
+["สถานที่", "คลองจิก", "Khlong Chik", "Khlong Chik"]
 ];
 
 /* ---------- ภาษา 3 ภาษา + คลังคำศัพท์ (Vocabulary) ----------
@@ -13803,7 +14389,7 @@ function recorderNames(row) {
 
 function sampleAuditCalls() {
   const size = Number($("auditSampleSize").value) || 10;
-  const sampled = new Set(App.auditCalls.map(c => c.recordId));
+  const sampled = new Set(currentAuditCalls().map(c => c.recordId));
   // เฉพาะลูกค้าหลักที่นับใน Dashboard และมีเบอร์ที่ใช้งานได้ · ไม่สุ่มซ้ำ
   let pool = App.uniqueRows.filter(r => !sampled.has(r.__recordId) && phoneStatus(r[App.columns.phone]) === "ok");
   if (!pool.length) { showToast("ลูกค้าหลักทุกรายถูกสุ่มไปแล้ว"); return; }
@@ -13817,7 +14403,8 @@ function sampleAuditCalls() {
   pick.forEach(r => App.auditCalls.push({
     id:`AC-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, batch, sampledAt:todayISO(),
     recordId:r.__recordId, name:text(r[App.columns.name]), phone:text(r[App.columns.phone]), province:text(r[App.columns.province]),
-    recorder:recorderNames(r).join(", "), status:"ยังไม่โทร", note:"", by:"", at:""
+    recorder:recorderNames(r).join(", "), status:"ยังไม่โทร", note:"", by:"", at:"",
+    fp:r.__fp, file:App.fileName || ""
   }));
   saveStore(AUDITCALL_KEY, App.auditCalls);
   logEvent("audit", `สุ่ม Audit Call รอบที่ ${batch} · ${pick.length} หมายเลข`);
@@ -13839,13 +14426,18 @@ function renderAuditCall() {
   ]);
   const view = $("auditCallView").value;
   const latest = Math.max(0, ...App.auditCalls.map(c => c.batch || 0));
-  const list = App.auditCalls.filter(c =>
+  // แสดงเฉพาะ Audit Call ของไฟล์ที่เปิดอยู่ · ของไฟล์ชุดอื่นยังเก็บในเครื่องแต่ไม่นำมาปน
+  const calls = currentAuditCalls();
+  const foreign = App.auditCalls.length - calls.length;
+  const foreignNote = foreign
+    ? `<div class="pagination"><span>ซ่อน Audit Call ของไฟล์ชุดอื่น ${formatNumber(foreign)} รายการ (Record ID ตรงแต่ชื่อ / เบอร์ไม่ตรงกับไฟล์นี้ หรือไม่มีในไฟล์นี้)</span></div>` : "";
+  const list = calls.filter(c =>
     view === "all" ? true :
     view === "false" ? AuditCallFalse.includes(c.status) :
     view === "ok" ? AuditCallOk.includes(c.status) :
     (c.batch === latest || c.status === "ยังไม่โทร")).sort((a, b) => b.batch - a.batch);
   if (!list.length) {
-    $("auditCallTable").innerHTML = `<div class="empty">ยังไม่มีรายการ — กด "สุ่มหมายเลข" เพื่อเริ่ม Audit Call</div>`;
+    $("auditCallTable").innerHTML = `<div class="empty">ยังไม่มีรายการ — กด "สุ่มหมายเลข" เพื่อเริ่ม Audit Call</div>${foreignNote}`;
     return;
   }
   $("auditCallTable").innerHTML = `
@@ -13868,7 +14460,7 @@ function renderAuditCall() {
         </tbody>
       </table>
     </div>
-    <div class="pagination"><span>ถูกต้อง / ใกล้เคียง = คะแนนกรอกข้อมูลดีเยี่ยมของผู้บันทึก · ข้อมูลเท็จ = ตัดออกจาก Dashboard ทั้งหมด</span><span>กด "บันทึกผลการโทร" หลังเลือกสถานะ</span></div>`;
+    <div class="pagination"><span>ถูกต้อง / ใกล้เคียง = คะแนนกรอกข้อมูลดีเยี่ยมของผู้บันทึก · ข้อมูลเท็จ = ตัดออกจาก Dashboard ทั้งหมด</span><span>กด "บันทึกผลการโทร" หลังเลือกสถานะ</span></div>${foreignNote}`;
 }
 
 function saveAuditCalls() {
@@ -13895,7 +14487,8 @@ $("auditCallSave").onclick = saveAuditCalls;
 $("auditCallView").onchange = renderAuditCall;
 $("auditCallClear").onclick = () => {
   const before = App.auditCalls.length;
-  App.auditCalls = App.auditCalls.filter(c => c.status !== "ยังไม่โทร");
+  const open = new Set(currentAuditCalls().filter(c => c.status === "ยังไม่โทร"));   // เฉพาะของไฟล์ที่เปิดอยู่
+  App.auditCalls = App.auditCalls.filter(c => !open.has(c));
   saveStore(AUDITCALL_KEY, App.auditCalls);
   renderAuditCall();
   showToast(`ลบรายการที่ยังไม่โทร ${before - App.auditCalls.length} รายการ`);
@@ -13986,6 +14579,7 @@ function logEvent(type, detail) {
 
 function renderLogPage() {
   if (!$("logTable")) return;
+  if (typeof renderStorePanel === "function") renderStorePanel();
   const today = todayISO();
   const todayCount = App.log.filter(e => e.at.startsWith(today)).length;
   const byType = {};
@@ -14429,282 +15023,89 @@ let savedTheme = "day";
 try { savedTheme = localStorage.getItem("r04-dashboard-theme") === "night" ? "night" : "day"; } catch (_) {}
 applyTheme(savedTheme);
 
+// ล้างเฉพาะการแก้ไขของไฟล์ที่เปิดอยู่ (ยังไม่เปิดไฟล์ = ล้างทั้งหมด) · การแก้ไขของไฟล์ชุดอื่นไม่ถูกลบ
 $("clearEdits").onclick = () => {
-  if (!Object.keys(App.edits).length) { showToast("ยังไม่มีการแก้ไขที่บันทึกไว้"); return; }
-  App.edits = {};
+  const mine = new Set(App.rawRows.filter(row => row.__edit).map(row => row.__edit));
+  const keys = Object.keys(App.edits).filter(key => !App.rawRows.length || mine.has(App.edits[key]));
+  if (!keys.length) { showToast("ยังไม่มีการแก้ไขที่บันทึกไว้"); return; }
+  if (!confirm(`ล้างการแก้ไข ${keys.length} รายการ${App.rawRows.length ? "ของไฟล์นี้" : "ทั้งหมดในเครื่องนี้"}? (ย้อนกลับไม่ได้)`)) return;
+  keys.forEach(key => delete App.edits[key]);
   saveStore(EDIT_KEY, App.edits);
+  logEvent("edit", `ล้างการแก้ไข ${keys.length} รายการ`);
   showToast("ล้างการแก้ไขแล้ว — กรุณาอัปโหลดไฟล์อีกครั้งเพื่อใช้ข้อมูลต้นฉบับ");
+};
+
+/* ---------- ข้อมูลที่เก็บในเครื่องนี้: สำรอง / กู้คืน / ล้าง ----------
+   การแก้ไข · Audit Call · Action Plan · ฐาน DP · Log อยู่ใน localStorage ของเบราว์เซอร์นี้เท่านั้น
+   → สำรองเป็นไฟล์ได้ (ย้ายเครื่อง / กันข้อมูลหาย) และล้างได้เมื่อใช้เครื่องร่วมกับผู้อื่น         */
+const STORE_PREFIX = "r04-dashboard-";
+const StoreLabels = {
+  [EDIT_KEY]:"การแก้ไขข้อมูล", [AUDITCALL_KEY]:"Audit Call", [ACTION_KEY]:"Action Plan", [DP_KEY]:"ฐาน DP / SHOP",
+  [LOG_KEY]:"Log กิจกรรม", [VOCAB_KEY]:"คำศัพท์ที่เพิ่มเอง", [DUPSPLIT_KEY]:"การแยกข้อมูลซ้ำ", [DUPOK_KEY]:"การยืนยันข้อมูลซ้ำ", [GEO_KEY]:"ขอบเขตจังหวัด (แผนที่)"
+};
+
+function storeKeys() {
+  try { return Object.keys(localStorage).filter(key => key.startsWith(STORE_PREFIX)).sort(); } catch (_) { return []; }
+}
+
+function renderStorePanel() {
+  if (!$("storeTable")) return;
+  const count = value => Array.isArray(value) ? value.length : value && typeof value === "object" ? Object.keys(value.features || value).length : 1;
+  const rows = storeKeys().map(key => {
+    const raw = localStorage.getItem(key) || "";
+    return { key, label:StoreLabels[key] || "การตั้งค่าหน้าจอ", size:raw.length, items:StoreLabels[key] ? count(loadStore(key)) : "" };
+  });
+  const total = rows.reduce((sum, row) => sum + row.size, 0);
+  $("storeTable").innerHTML = rows.length ? `
+    <div class="table-wrap" style="max-height:360px"><table data-no-i18n-values>
+      <thead><tr><th>ข้อมูล</th><th>คีย์</th><th>จำนวนรายการ</th><th>ขนาด (KB)</th></tr></thead>
+      <tbody>${rows.map(row => `<tr><td>${escapeHTML(row.label)}</td><td class="small-list">${escapeHTML(row.key)}</td>
+        <td class="num">${row.items === "" ? "" : formatNumber(row.items)}</td><td class="num">${formatNumber(Math.round(row.size / 102.4) / 10)}</td></tr>`).join("")}</tbody>
+    </table></div>
+    <div class="pagination"><span>รวม ${formatNumber(Math.round(total / 1024))} KB (เบราว์เซอร์ให้พื้นที่ประมาณ 5,000 KB) · ไฟล์ XLSX ที่อัปโหลดไม่ถูกเก็บ ต้องอัปโหลดใหม่ทุกครั้งที่เปิด</span></div>`
+    : `<div class="empty">ยังไม่มีข้อมูลที่เก็บในเครื่องนี้</div>`;
+}
+
+$("storeBackup").onclick = () => {
+  const data = Object.fromEntries(storeKeys().map(key => [key, localStorage.getItem(key)]));
+  const payload = { app:"R04 Management Dashboard", version:9, savedAt:new Date().toISOString(), by:App.userName || "", data };
+  downloadBlob(new Blob([JSON.stringify(payload)], { type:"application/json" }), `R04_Dashboard_Backup_${todayISO()}.json`);
+  logEvent("system", `สำรองข้อมูลในเครื่อง ${Object.keys(data).length} ชุด`);
+  showToast("สำรองข้อมูลแล้ว — ไฟล์นี้มีข้อมูลลูกค้า เก็บในที่ปลอดภัย");
+};
+
+$("storeRestore").onclick = () => { $("storeFileInput").value = ""; $("storeFileInput").click(); };
+$("storeFileInput").addEventListener("change", async event => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  try {
+    const payload = JSON.parse(await file.text());
+    const entries = Object.entries(payload?.data || {}).filter(([key, value]) => key.startsWith(STORE_PREFIX) && typeof value === "string");
+    if (!entries.length) throw new Error("ไฟล์นี้ไม่ใช่ไฟล์สำรองของ R04 Dashboard");
+    entries.forEach(([, value]) => JSON.parse(value));   // ตรวจก่อนเขียน: ทุกชุดต้องเป็น JSON ที่อ่านได้
+    if (!confirm(`กู้คืนข้อมูล ${entries.length} ชุด จากไฟล์สำรองวันที่ ${String(payload.savedAt || "").slice(0, 10) || "-"}?\n\nข้อมูลชุดเดียวกันในเครื่องนี้จะถูกแทนที่ด้วยข้อมูลในไฟล์`)) return;
+    const failed = entries.filter(([key, value]) => { try { localStorage.setItem(key, value); return false; } catch (_) { return true; } });
+    if (failed.length) throw new Error(`กู้คืนไม่สำเร็จ ${failed.length} ชุด (พื้นที่ในเบราว์เซอร์ไม่พอ)`);
+    location.reload();
+  } catch (error) {
+    showToast(error.message || "อ่านไฟล์สำรองไม่ได้");
+  }
+});
+
+$("storeClear").onclick = () => {
+  const keys = storeKeys();
+  if (!keys.length) { showToast("ยังไม่มีข้อมูลที่เก็บในเครื่องนี้"); return; }
+  if (!confirm(`ล้างข้อมูลทั้งหมดที่เก็บในเครื่องนี้ ${keys.length} ชุด?\n\nการแก้ไข · Audit Call · Action Plan · ฐาน DP · Log จะหายถาวร — ควรกด "สำรองข้อมูล" ก่อน`)) return;
+  keys.forEach(key => { try { localStorage.removeItem(key); } catch (_) {} });
+  location.reload();
 };
 
 /* ---------- Initial empty state ---------- */
 
 refreshFilterUI();
 translateTree(document.body);
+liveInit();
 </script>
 
-<script type="module">
-/* =========================================================
-   Feishu / Lark Base connector (real-time, อ่านอย่างเดียว)
-   - ทำงานเฉพาะเมื่อหน้านี้ถูกเปิดเป็น Plugin ภายใน Feishu Base (อยู่ใน iframe)
-   - เปิด URL ตรง ๆ นอก Feishu = Template อัปโหลด XLSX แบบเดิม ไม่มีข้อมูลใด ๆ
-   - อ่านข้อมูลผ่าน Base JS SDK (สื่อสารกับหน้าต่าง Feishu เท่านั้น) ไม่ส่งข้อมูลไปเซิร์ฟเวอร์อื่น
-   - สิทธิ์การเห็นข้อมูล = สิทธิ์ของผู้ใช้ใน Base (Advanced permissions)
-========================================================= */
-const FS_SDK_URL = "https://cdn.jsdelivr.net/npm/@lark-base-open/js-sdk@1.0.2/+esm";
-const FS_TABLE_KEY = "r04-feishu-table";
-const FS_DATE_TYPES = [5, 1001, 1002];       // DateTime · CreatedTime · ModifiedTime
-const FS = { bitable:null, table:null, tableName:"", unsub:[], timer:null, loading:false, first:true };
-
-const fsInFrame = (() => { try { return window.self !== window.top; } catch (_) { return true; } })();
-if (fsInFrame) fsInit();
-
-function fsTimeout(promise, ms, message) {
-  return Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error(message)), ms))]);
-}
-
-function fsStatus(text, tone = "gray", badge = "") {
-  $("fileStatus").textContent = text;
-  $("dataStatus").className = `badge badge-${tone}`;
-  if (badge) $("dataStatus").textContent = badge;
-}
-
-// ค่าในเซลล์ Base → ข้อความ/ตัวเลขแบบเดียวกับที่อ่านจาก XLSX
-function fsCell(value, type) {
-  if (value === null || value === undefined) return "";
-  if (FS_DATE_TYPES.includes(type) && typeof value === "number") {
-    const d = new Date(value);
-    return `${localISO(d)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-  }
-  if (typeof value === "number") return value;
-  if (typeof value === "boolean") return value ? "ใช่" : "";
-  if (typeof value === "string") return value;
-  if (Array.isArray(value)) {
-    // ข้อความหลายช่วง (text / url / mention) ต่อกันเป็นข้อความเดียว
-    if (value.every(x => x && typeof x === "object" && "type" in x && "text" in x)) return value.map(x => x.text ?? "").join("");
-    return value.map(x => fsCell(x, type)).filter(x => x !== "" && x !== null && x !== undefined).join(", ");
-  }
-  if (typeof value === "object") return value.text ?? value.name ?? value.fullAddress ?? value.address ?? value.value ?? value.link ?? "";
-  return String(value);
-}
-
-async function fsReadTable(table) {
-  const metas = await table.getFieldMetaList();
-  let ordered = metas;
-  try {   // เรียงคอลัมน์ตามมุมมองแรกของตาราง (ถ้าอ่านได้)
-    const views = await table.getViewList();
-    const ids = await (views[0].getVisibleFieldIdList?.() ?? views[0].getFieldIdList());
-    const byId = new Map(metas.map(m => [m.id, m]));
-    ordered = [...ids.map(id => byId.get(id)).filter(Boolean), ...metas.filter(m => !ids.includes(m.id))];
-  } catch (_) {
-    ordered = [...metas.filter(m => m.isPrimary), ...metas.filter(m => !m.isPrimary)];
-  }
-  const rows = [];
-  let pageToken;
-  do {
-    const res = await table.getRecords({ pageSize:500, pageToken });
-    (res.records || []).forEach(record => {
-      const row = {};
-      ordered.forEach(m => { row[m.name] = fsCell(record.fields?.[m.id], m.type); });
-      row.__baseRecordId = record.recordId;
-      rows.push(row);
-    });
-    pageToken = res.hasMore ? res.pageToken : undefined;
-  } while (pageToken);
-  return { headers:ordered.map(m => m.name), rows };
-}
-
-function fsWorkbook(rows, sheetName) {
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.map(r => {
-    const out = {};
-    Object.keys(r).forEach(k => { if (!k.startsWith("__")) out[k] = r[k]; });
-    return out;
-  })), sheetName.slice(0, 31));
-  return wb;
-}
-
-// ประมวลผลแถวเข้า Dashboard (เส้นทางเดียวกับการอัปโหลด XLSX) · keepFilters = อัปเดตแบบ real-time ไม่ล้างตัวกรอง
-function r04IngestRows(rows, headers, label, { keepFilters = false, actionRows = null } = {}) {
-  if (!keepFilters) {
-    App.filterSel = {};
-    ["searchFilter", "dateFrom", "dateTo"].forEach(id => $(id).value = "");
-    App.quickRange = "all";
-  }
-  Object.values(App.charts).forEach(chart => { try { chart.destroy(); } catch (_) {} });
-  App.charts = {};
-  App.workbook = null;
-  App.fileName = label;
-  App.sourceSheetName = label;
-  if (!headers.includes(App.columns.id)) headers = [App.columns.id, ...headers];
-  App.sourceHeaders = headers;
-
-  App.rawRows = rows.map((row, index) => {
-    if (!isFilled(row[App.columns.id]) && row.__baseRecordId) row[App.columns.id] = row.__baseRecordId;
-    if (isFilled(row[App.columns.province])) row[App.columns.province] = normProvince(row[App.columns.province]);
-    return applyEdits({
-      ...row,
-      __rawIndex:index,
-      __ctype:classifyCustomerType(row[App.columns.customerType]),
-      __recordId:text(row[App.columns.id]) !== "-" ? text(row[App.columns.id]) : `ROW-${index + 2}`
-    });
-  });
-
-  App.actionPlans = actionRows
-    ? actionRows.filter(a => isFilled(a["Action ID"]) || isFilled(a["รายละเอียด"]))
-    : [];
-  mergeStoredActions();
-  buildDuplicateModel();
-  App.filteredRows = [...App.uniqueRows];
-  const newDps = autoAddDPs();
-  updateDpStatus();
-  buildFilterOptions();
-  applyFilters();
-  return newDps;
-}
-window.r04IngestRows = r04IngestRows;
-
-async function fsPickTables() {
-  const metas = await FS.bitable.base.getTableMetaList();
-  const info = [];
-  for (const m of metas) {
-    try {
-      const t = await FS.bitable.base.getTableById(m.id);
-      const names = (await t.getFieldMetaList()).map(f => f.name);
-      info.push({ ...m, names });
-    } catch (_) { info.push({ ...m, names:[] }); }
-  }
-  const has = (t, cols) => cols.every(c => t.names.includes(c));
-  let saved = "";
-  try { saved = localStorage.getItem(FS_TABLE_KEY) || ""; } catch (_) {}
-  let main = info.find(t => t.id === saved) ||
-    info.find(t => has(t, [App.columns.name, App.columns.customerType])) ||
-    info.find(t => t.names.includes(App.columns.name));
-  if (!main) {
-    const active = await FS.bitable.base.getActiveTable();
-    main = info.find(t => t.id === active.id) || info[0];
-  }
-  const dp = info.find(t => t !== main && /dp|master|shop/i.test(t.name) && t.names.some(n => /^(DP Code|DP|รหัสสาขา)/i.test(n)) && t.names.includes("จังหวัด"));
-  const action = info.find(t => t !== main && /action\s*plan/i.test(t.name));
-  return { info, main, dp, action };
-}
-
-function fsRenderPicker(info, mainId) {
-  let box = $("fsTablePick");
-  if (!box) {
-    box = document.createElement("span");
-    box.id = "fsTablePick";
-    box.style.cssText = "display:inline-flex;gap:6px;align-items:center;margin-left:8px";
-    $("dataStatus").parentElement.insertBefore(box, $("dataStatus"));
-  }
-  box.innerHTML = `<select id="fsTableSelect" class="lang-select" style="min-height:28px;font-weight:400" title="ตารางข้อมูลเข้าพบใน Feishu Base">
-      ${info.map(t => `<option value="${escapeHTML(t.id)}" ${t.id === mainId ? "selected" : ""}>${escapeHTML(t.name)}</option>`).join("")}
-    </select>
-    <button class="btn btn-sm" id="fsReload" type="button" title="โหลดข้อมูลจาก Feishu ใหม่">🔄 โหลดใหม่</button>`;
-  $("fsTableSelect").onchange = () => {
-    try { localStorage.setItem(FS_TABLE_KEY, $("fsTableSelect").value); } catch (_) {}
-    FS.first = true;
-    fsConnect();
-  };
-  $("fsReload").onclick = () => fsLoad({ keepFilters:true, manual:true });
-}
-
-async function fsLoad({ keepFilters = true, manual = false } = {}) {
-  if (!FS.table || FS.loading) return;
-  FS.loading = true;
-  try {
-    fsStatus(`กำลังอ่านข้อมูลจาก Feishu · ${FS.tableName} ...`, "orange", "กำลังซิงก์");
-    const { headers, rows } = await fsReadTable(FS.table);
-    const missing = App.requiredColumns.filter(c => c !== App.columns.id && !headers.includes(c));
-    let actionRows = null;
-    if (FS.actionTable) {
-      try { actionRows = (await fsReadTable(FS.actionTable)).rows; } catch (e) { console.warn("Action Plan table", e); }
-    }
-    if (FS.dpTable) {
-      try {
-        const dp = await fsReadTable(FS.dpTable);
-        const parsed = parseDpWorkbook(fsWorkbook(dp.rows, "DP"));
-        const keep = App.dpMaster.filter(r => r.source === "user" || r.source === "auto");
-        const fileDPs = new Set(parsed.map(r => normDP(r.dp)).filter(Boolean));
-        App.dpMaster = parsed;
-        keep.forEach(r => { if (!normDP(r.dp) || !fileDPs.has(normDP(r.dp))) App.dpMaster.push(r); });
-        ensureSpecialAreas();
-        saveDpMaster();
-      } catch (e) { console.warn("DP table", e); }
-    }
-    const newDps = r04IngestRows(rows, headers, `Feishu · ${FS.tableName}`, { keepFilters: keepFilters && !FS.first, actionRows });
-    const now = new Date();
-    const at = `${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`;
-    $("fileStatus").textContent =
-      `🟢 Feishu · ${FS.tableName} · ${formatNumber(App.rawRows.length)} รายการ · ${formatNumber(App.uniqueRows.length)} ลูกค้าใช้งานได้ · รอแก้ไข ${formatNumber(App.pendingRows.length)} · อัปเดต ${at}`;
-    if (missing.length) {
-      $("dataStatus").className = "badge badge-orange";
-      $("dataStatus").textContent = "คอลัมน์ไม่ครบ";
-      $("dataStatus").title = `ไม่พบคอลัมน์: ${missing.join(", ")}`;
-      if (FS.first || manual) showToast(`ตาราง Feishu ไม่มีคอลัมน์: ${missing.join(", ")} — ตัวเลขบางส่วนจะว่าง`);
-    } else {
-      $("dataStatus").className = "badge badge-green";
-      $("dataStatus").textContent = "Real-time";
-      $("dataStatus").title = "เชื่อม Feishu Base · อัปเดตอัตโนมัติเมื่อมีการเพิ่ม/แก้/ลบแถว";
-    }
-    if (FS.first) {
-      logEvent("upload", `เชื่อม Feishu Base · ตาราง ${FS.tableName} · ${App.rawRows.length} รายการ`);
-      showToast(`เชื่อม Feishu แล้ว · ${formatNumber(App.uniqueRows.length)} ลูกค้า`);
-      if (newDps) setTimeout(() => showToast(`พบ DP ใหม่ ${newDps} รหัส — เพิ่มในฐาน DP (รอยืนยัน) แล้ว`), 2800);
-    } else if (manual) {
-      showToast("โหลดข้อมูลจาก Feishu ใหม่แล้ว");
-    }
-    FS.first = false;
-  } catch (error) {
-    console.error(error);
-    fsStatus(`อ่านข้อมูลจาก Feishu ไม่ได้: ${error.message || error}`, "red", "เกิดข้อผิดพลาด");
-  } finally {
-    FS.loading = false;
-  }
-}
-
-function fsSchedule() {
-  clearTimeout(FS.timer);
-  FS.timer = setTimeout(() => fsLoad({ keepFilters:true }), 1500);   // รวมการแก้ติดกันหลายแถวเป็นรอบเดียว
-}
-
-async function fsConnect() {
-  FS.unsub.forEach(off => { try { off(); } catch (_) {} });
-  FS.unsub = [];
-  const { info, main, dp, action } = await fsPickTables();
-  if (!main) throw new Error("ไม่พบตารางใน Base นี้");
-  FS.table = await FS.bitable.base.getTableById(main.id);
-  FS.tableName = main.name;
-  FS.dpTable = dp ? await FS.bitable.base.getTableById(dp.id) : null;
-  FS.actionTable = action ? await FS.bitable.base.getTableById(action.id) : null;
-  fsRenderPicker(info, main.id);
-  [FS.table, FS.dpTable, FS.actionTable].filter(Boolean).forEach(t => {
-    ["onRecordAdd", "onRecordModify", "onRecordDelete"].forEach(ev => {
-      try { const off = t[ev]?.(fsSchedule); if (typeof off === "function") FS.unsub.push(off); } catch (_) {}
-    });
-  });
-  await fsLoad({ keepFilters:false });
-}
-
-async function fsInit() {
-  fsStatus("กำลังเชื่อมต่อ Feishu Base ...", "orange", "กำลังเชื่อม");
-  try {
-    const sdk = await fsTimeout(import(FS_SDK_URL), 15000, "โหลด Feishu SDK ไม่สำเร็จ (ตรวจอินเทอร์เน็ต)");
-    FS.bitable = sdk.bitable || sdk.default?.bitable;
-    if (!FS.bitable) throw new Error("ไม่พบ bitable ใน SDK");
-    await fsTimeout(FS.bitable.base.getTableMetaList(), 8000, "หน้านี้ไม่ได้เปิดเป็น Plugin ใน Feishu Base");
-
-    // โหมด Feishu: ซ่อนการอัปโหลดข้อมูลเข้าพบ (ข้อมูลมาจาก Base อย่างเดียว)
-    document.querySelector(".upload-banner h3").textContent = "เชื่อมต่อ Feishu Base · Real-time";
-    document.querySelector(".upload-banner p").textContent =
-      "อ่านข้อมูลจากตารางใน Base นี้โดยตรง · เพิ่ม / แก้ / ลบแถวใน Feishu แล้ว Dashboard อัปเดตเองภายในไม่กี่วินาที · เห็นเฉพาะข้อมูลที่บัญชีคุณมีสิทธิ์ใน Base";
-    $("uploadButton").style.display = "none";
-    await fsConnect();
-    if (FS.dpTable) $("dpUploadButton").style.display = "none";
-  } catch (error) {
-    console.warn(error);
-    fsStatus(`${error.message || error} · ใช้การอัปโหลด XLSX ได้ตามปกติ`, "gray", "รอข้อมูล");
-  }
-}
-</script>
 </body>
 </html>
