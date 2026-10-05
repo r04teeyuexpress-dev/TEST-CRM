@@ -1250,9 +1250,9 @@ body.compact .mobile-menu{display:inline-flex}
 body.compact .topbar{height:auto;min-height:56px;padding:8px 12px;flex-wrap:wrap;gap:8px}
 body.compact .page-heading h2{font-size:calc(16px * var(--fs))}
 body.compact .page-heading p{display:none}
-body.compact .top-actions{flex-wrap:wrap;gap:6px;width:100%}
-body.compact .top-actions .btn,body.compact .top-actions select,body.compact .top-actions input{min-height:32px;padding:5px 9px;font-size:calc(12px * var(--fs))}
-body.compact .top-actions .user-name{flex:1 1 120px;min-width:0;width:auto}
+body.compact .topbar .top-actions{flex-wrap:wrap;gap:6px;width:100%}
+body.compact .topbar .top-actions .btn,body.compact .topbar .top-actions select,body.compact .topbar .top-actions input{min-height:32px;padding:5px 9px;font-size:calc(12px * var(--fs))}
+body.compact .topbar .top-actions .user-name{flex:1 1 120px;min-width:0;width:auto}
 body.compact .theme-toggle{min-width:auto}
 body.compact .content{padding:12px 10px 28px}
 body.compact .upload-banner{grid-template-columns:1fr;padding:12px 14px;gap:8px}
@@ -1283,17 +1283,41 @@ body.night-mode #fsReload.has-new{background:#3a2a10;color:#FEC84B}
 /* แถบบนแบบย่อ: เหลือ ตัวกรอง · ⋯ · Export — ปุ่มอื่นอยู่ใต้ ⋯ */
 #topMore{display:none}
 body.compact #topMore{display:inline-flex}
-body.compact:not(.top-open) .top-actions > :not(#filterToggleTop):not(#expWrap):not(#topMore){display:none!important}
-body.compact .top-actions{width:auto;margin-left:auto;justify-content:flex-end}
-body.compact.top-open .top-actions{width:100%}
+body.compact:not(.top-open) .topbar .top-actions > :not(#filterToggleTop):not(#expWrap):not(#topMore){display:none!important}
+body.compact .topbar .top-actions{width:auto;margin-left:auto;justify-content:flex-end}
+body.compact.top-open .topbar .top-actions{width:100%}
 /* หน้าจอกลาง (ไม่ใช่โหมดกะทัดรัด): แถบบนตัดบรรทัดได้ ไม่ล้นจอ */
 @media (max-width:1320px){
   body:not(.compact) .topbar{height:auto;min-height:78px;padding-top:10px;padding-bottom:10px;flex-wrap:wrap}
-  body:not(.compact) .top-actions{flex-wrap:wrap;justify-content:flex-end;margin-left:auto}
+  body:not(.compact) .topbar .top-actions{flex-wrap:wrap;justify-content:flex-end;margin-left:auto}
 }
 /* ตารางในโหมดกะทัดรัด: ไม่บีบคอลัมน์จนชื่อขาดเป็นตัว ๆ — เลื่อนซ้าย-ขวาในกรอบแทน */
 body.compact .table-wrap table{width:max-content;min-width:100%}
 body.compact .table-wrap td,body.compact .table-wrap th{min-width:5.5em;max-width:260px;word-break:normal}
+/* ---------- หน้าต่างรายละเอียด / Pop-up: เลื่อนดูได้ครบทุกขนาดจอ ----------
+   เดิม: ความสูงส่วนเนื้อหา = จอ − หัว 72px ตายตัว → ชื่อลูกค้ายาว / จอแคบ หัวขึ้น 2–3 บรรทัด ท้ายเนื้อหาถูกตัด เลื่อนไม่ถึง
+   ใหม่: หัวสูงตามเนื้อหา · เนื้อหาใช้พื้นที่ที่เหลือและเลื่อนได้เสมอ */
+.drawer{display:flex;flex-direction:column;right:0!important;transform:translateX(calc(100% + 48px));visibility:hidden;transition:transform .25s ease,visibility 0s linear .25s}
+.drawer.open{transform:none;visibility:visible;transition:transform .25s ease}
+.drawer-head{flex:none;height:auto;min-height:64px;gap:10px;padding:12px 16px}
+.drawer-head > div{min-width:0}
+.drawer-head h3,#drawerSubtitle{overflow-wrap:anywhere}
+.drawer-head .close-button{flex:none}
+.drawer-body{flex:1 1 auto;min-height:0;height:auto!important;overscroll-behavior:contain}
+.modal:not(.hidden){display:flex;flex-direction:column}
+.modal-head{flex:none;gap:10px;align-items:flex-start}
+.modal-head h3{min-width:0;overflow-wrap:anywhere}
+.modal-head .close-button{flex:none}
+.modal-body{flex:1 1 auto;min-height:0;max-height:none!important;overscroll-behavior:contain}
+body.compact .drawer{width:100vw!important;max-width:100vw}
+body.compact .modal{width:96vw!important;max-width:96vw;max-height:94vh!important}
+body.compact .drawer-body,body.compact .modal-body{padding:12px}
+@media (max-width:600px){ .drawer .detail-grid,body.compact .drawer .detail-grid{grid-template-columns:1fr!important} }
+/* แถบบนแบบย่อ: เปิด ⋯ แล้วไม่ค้างกินพื้นที่ */
+body.compact .topbar{position:sticky}
+/* ปุ่มในหัวข้อ / Pop-up (ไม่ใช่แถบบน) ตัดบรรทัดได้ */
+body.compact .panel-title-row{flex-wrap:wrap}
+body.compact .panel .top-actions,body.compact .modal .top-actions{flex-wrap:wrap;gap:6px;max-width:100%;justify-content:flex-start}
 </style>
 </head>
 
@@ -15310,6 +15334,11 @@ function setupCollapsible() {
   more.title = "เมนูเพิ่มเติม (ภาษา · บทบาท · ตัวอักษร · โหมดกลางคืน · การแสดงผล)";
   $("filterToggleTop").after(more);
   more.onclick = () => document.body.classList.toggle("top-open");
+  // กดที่อื่น / เลื่อนหน้า → พับปุ่มเพิ่มเติมกลับ (แถบบนไม่ค้างกินพื้นที่จอ)
+  document.addEventListener("click", event => {
+    if (document.body.classList.contains("top-open") && !event.target.closest(".topbar")) document.body.classList.remove("top-open");
+  });
+
 })();
 
 $("compactToggle").onclick = () => {
