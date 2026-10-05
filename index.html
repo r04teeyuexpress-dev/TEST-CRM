@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>R04 Management Dashboard</title>
 
-<!-- จำกัดปลายทางเครือข่าย: ไลบรารี 2 ตัว (ตรวจ hash) · ฟอนต์ · ขอบเขตจังหวัดสาธารณะ · Feishu Bridge ในเครื่องนี้เท่านั้น
+<!-- จำกัดปลายทางเครือข่าย: ไลบรารี 2 ตัว (ตรวจ hash) · ฟอนต์ · ขอบเขตจังหวัดสาธารณะ · Feishu Bridge ในเครื่องนี้ · Feishu Base SDK (คุยกับหน้าต่าง Feishu ผ่าน postMessage)
      ข้อมูลลูกค้าส่งออกนอกเครื่องผ่าน fetch / form / รูปภาพ ไม่ได้ -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://cdn.sheetjs.com/xlsx-0.20.3/ https://cdn.jsdelivr.net/npm/chart.js@4.4.7/; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' https://cdn.jsdelivr.net/gh/ https://raw.githubusercontent.com/apisit/ http://127.0.0.1:* http://localhost:*; form-action 'none'; base-uri 'none'; object-src 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://cdn.sheetjs.com/xlsx-0.20.3/ https://cdn.jsdelivr.net/npm/; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' https://cdn.jsdelivr.net/gh/ https://raw.githubusercontent.com/apisit/ http://127.0.0.1:* http://localhost:*; form-action 'none'; base-uri 'none'; object-src 'none'">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -2514,7 +2514,7 @@ App.headerReport = { renamed:[], missing:[], unknown:[] };
 
 // เปลี่ยนหัวคอลัมน์ในไฟล์ให้เป็นชื่อมาตรฐาน + รายงานคอลัมน์ที่ Dashboard ใช้แต่หาไม่พบ
 function normalizeHeaders(rows) {
-  const headers = [...new Set(rows.flatMap(row => Object.keys(row)))];
+  const headers = [...new Set(rows.flatMap(row => Object.keys(row)))].filter(key => !key.startsWith("__"));
   const rename = new Map();
   headers.forEach(header => {
     const name = HeaderLookup.get(normHeader(header));
@@ -3178,7 +3178,7 @@ function ingestRows(inputRows, source) {
   // การแก้ไขที่บันทึกในเครื่องแต่ไม่ตรงกับแถวใดของไฟล์นี้ = ของไฟล์ชุดอื่น
   App.foreignEdits = Object.keys(App.edits).length - App.rawRows.filter(row => row.__edit).length;
 
-  loadExistingActionPlans(source.workbook);
+  loadExistingActionPlans(source.workbook, source.baseActions);
   buildDuplicateModel();
   App.filteredRows = [...App.uniqueRows];
 
@@ -3258,6 +3258,7 @@ function liveSchedule() {
 
 async function liveInit() {
   if (!/^https?:$/.test(location.protocol)) return;
+  try { if (window.self !== window.top) return; } catch (_) { return; }   // เปิดใน Feishu Base → ใช้ตัวเชื่อม Base แทน
   try {
     const status = await liveGet("/api/status");
     if (!status.bridge) return;
@@ -3273,7 +3274,9 @@ async function liveInit() {
   liveSchedule();
 }
 
-function loadExistingActionPlans(workbook) {
+function loadExistingActionPlans(workbook, baseActions) {
+  // โหมด Feishu Base: Action Plan มาจากตาราง Action Plan ใน Base (+ รายการรอส่ง) — ไม่รวมกับที่เก็บในเครื่อง
+  if (Array.isArray(baseActions)) { App.actionPlans = baseActions; return; }
   const sheetName = workbook?.SheetNames.find(name =>
     /action\s*plan/i.test(name)
   );
@@ -5886,7 +5889,13 @@ const PageOfDept = { "MKT":"mkt", "Network":"network", "Yoyi / Home":"home" };
 App.actionEditing = null;
 
 function persistActions() {
+  if (App.fsMode) return;
   saveStore(ACTION_KEY, App.actionPlans);
+}
+
+// แจ้งตัวเชื่อม Feishu (ถ้าเปิดใน Feishu Base) ให้บันทึก / ลบ Action Plan ใน Base
+function actionChanged(kind, action) {
+  if (typeof window.fsActionChanged === "function") window.fsActionChanged(kind, action);
 }
 
 function mergeStoredActions() {
@@ -6012,13 +6021,16 @@ function saveActionFromModal(keepOpen) {
   };
   saveStore(OWNER_KEY, values["เจ้าของงาน"]);
 
+  let changed;
   if (App.actionEditing) {
-    const action = App.actionPlans.find(a => a["Action ID"] === App.actionEditing);
-    Object.assign(action, values);
+    changed = App.actionPlans.find(a => a["Action ID"] === App.actionEditing);
+    Object.assign(changed, values);
   } else {
-    App.actionPlans.push({ "Action ID":`ACT-${Date.now()}`, ...values, "วันที่สร้าง":todayISO(), "ไฟล์ต้นทาง":App.fileName || "" });
+    changed = { "Action ID":`ACT-${Date.now()}`, ...values, "วันที่สร้าง":todayISO(), "ไฟล์ต้นทาง":App.fileName || "" };
+    App.actionPlans.push(changed);
   }
   persistActions();
+  actionChanged("upsert", changed);
   refreshActionViews();
   logEvent("action", `${App.actionEditing ? "แก้ไข" : "เพิ่ม"} Action Plan · ${values["แผนก"]} · ${record} · ${values["สถานะ"]} · ${detail.slice(0, 80)}`);
   showToast(App.actionEditing ? "แก้ไข Action Plan แล้ว" : "เพิ่ม Action Plan แล้ว");
@@ -6035,8 +6047,10 @@ function saveActionFromModal(keepOpen) {
 
 function deleteActionFromModal() {
   logEvent("action", `ลบ Action Plan ${App.actionEditing}`);
+  const removed = App.actionPlans.find(a => a["Action ID"] === App.actionEditing);
   App.actionPlans = App.actionPlans.filter(a => a["Action ID"] !== App.actionEditing);
   persistActions();
+  actionChanged("delete", removed);
   refreshActionViews();
   closeLayer("actionModal");
   showToast("ลบ Action Plan แล้ว");
@@ -6060,7 +6074,7 @@ $("saveAction").onclick = () => {
     return;
   }
 
-  App.actionPlans.push({
+  const created = {
     "Action ID": `ACT-${Date.now()}`,
     "Record ID / Customer Key": record,
     "แผนก": $("actionDepartment").value,
@@ -6072,10 +6086,12 @@ $("saveAction").onclick = () => {
     "วันที่สร้าง": todayISO(),
     "อัปเดตล่าสุด": todayISO(),
     "ไฟล์ต้นทาง": App.fileName || ""
-  });
+  };
+  App.actionPlans.push(created);
 
   ["actionRecord","actionOwner","actionDue","actionDetail"].forEach(id => $(id).value = "");
   persistActions();
+  actionChanged("upsert", created);
   refreshActionViews();
   showToast("เพิ่ม Action Plan แล้ว (บันทึกในเครื่อง + รวมใน Export XLSX)");
 };
@@ -13894,7 +13910,46 @@ const BASE_VOCAB_ROWS = [
 ["สถานที่", "กระทุ่มล้ม", "Krathum Lom", "Krathum Lom"],
 ["สถานที่", "กุยบุรี", "Kui Buri", "归武里"],
 ["สถานที่", "บางกรวย", "Bang Kruai", "挽桂"],
-["สถานที่", "คลองจิก", "Khlong Chik", "Khlong Chik"]
+["สถานที่", "คลองจิก", "Khlong Chik", "Khlong Chik"],
+/* ----- Feishu Base: Action Plan เขียนกลับ (2026-10-05) ----- */
+["ป้าย", "Action Plan ↔ Feishu", "Action Plan ↔ Feishu", "行动计划 ↔ 飞书"],
+["ป้าย", "ยังไม่มีตาราง Action Plan ใน Feishu", "No Action Plan table in Feishu yet", "飞书中尚无行动计划表"],
+["ป้าย", "รอส่งเข้า Feishu {#} รายการ", "{#} waiting to be sent to Feishu", "待发送至飞书 {#} 条"],
+["ป้าย", "ซิงก์กับ Feishu แล้ว", "Synced with Feishu", "已与飞书同步"],
+["ป้าย", "ตาราง \"{*}\" · คอลัมน์ \"ลูกค้า\" ลิงก์ไปแถวลูกค้า · ทุกคนที่เปิด Base เห็นพร้อมกัน", "Table \"{*}\" · the \"Customer\" column links to the customer row · everyone with the Base sees it at once", "表「{*}」 · 「客户」列关联到客户行 · 所有打开该多维表格的人同时可见"],
+["ป้าย", "กดสร้างตารางครั้งเดียว (ต้องมีสิทธิ์จัดการ Base) แล้ว Action Plan ที่เพิ่มจะบันทึกเข้า Feishu ทันที", "Create the table once (needs Base manage permission); new Action Plans are then saved to Feishu immediately", "只需创建一次表格（需要多维表格管理权限），之后新增的行动计划会立即保存到飞书"],
+["ปุ่ม", "สร้างตาราง Action Plan", "Create Action Plan table", "创建行动计划表"],
+["ปุ่ม", "ส่งตอนนี้", "Send now", "立即发送"],
+["ปุ่ม", "ส่ง Action Plan ในเครื่อง ({#}) เข้า Feishu", "Send local Action Plans ({#}) to Feishu", "将本机行动计划（{#}）发送到飞书"],
+["ป้าย", "บันทึก Action Plan ลง Feishu แล้ว", "Action Plan saved to Feishu", "行动计划已保存到飞书"],
+["ป้าย", "ลบ Action Plan ใน Feishu แล้ว", "Action Plan deleted in Feishu", "已在飞书中删除行动计划"],
+["ป้าย", "ส่งเข้า Feishu ไม่สำเร็จ: {*} — เก็บไว้ในเครื่อง จะส่งใหม่อัตโนมัติ", "Could not send to Feishu: {*} — kept on this device, will retry automatically", "发送到飞书失败：{*} — 已保存在本机，将自动重试"],
+["ป้าย", "ส่ง Action Plan เข้า Feishu แล้ว {#} รายการ", "Sent {#} Action Plans to Feishu", "已发送 {#} 条行动计划到飞书"],
+["ป้าย", "บัญชีนี้ไม่มีสิทธิ์แก้ไขตารางใน Base", "This account has no permission to edit the Base table", "此账号没有编辑该多维表格的权限"],
+["ป้าย", "ยังไม่มีตาราง Action Plan ใน Feishu — บันทึกไว้ในเครื่องก่อน กด \"สร้างตาราง Action Plan\" ที่หน้า Action Plan", "No Action Plan table in Feishu yet — saved on this device; press \"Create Action Plan table\" on the Action Plan page", "飞书中尚无行动计划表 — 已先保存在本机，请在行动计划页点击「创建行动计划表」"],
+["ป้าย", "สร้างตาราง Action Plan ใน Feishu แล้ว", "Action Plan table created in Feishu", "已在飞书中创建行动计划表"],
+["ป้าย", "สร้างตารางไม่สำเร็จ: {*} — ให้ผู้ดูแล Base กดสร้าง หรือสร้างตารางชื่อ \"Action Plan\" เอง", "Could not create the table: {*} — ask the Base admin to create it, or create a table named \"Action Plan\" yourself", "创建表格失败：{*} — 请多维表格管理员创建，或自行创建名为「Action Plan」的表"],
+["ป้าย", "เชื่อมต่อ Feishu Base · Real-time", "Connected to Feishu Base · Real-time", "已连接飞书多维表格 · 实时"],
+["ป้าย", "อ่านข้อมูลจากตารางใน Base นี้โดยตรง · เพิ่ม / แก้ / ลบแถวใน Feishu แล้ว Dashboard อัปเดตเองภายในไม่กี่วินาที · Action Plan ที่เพิ่มในนี้บันทึกลงตาราง Action Plan ใน Base · เห็นเฉพาะข้อมูลที่บัญชีคุณมีสิทธิ์", "Reads this Base's tables directly · add / edit / delete rows in Feishu and the dashboard updates within seconds · Action Plans added here are saved to the Action Plan table in the Base · you only see data your account can access", "直接读取本多维表格中的数据 · 在飞书中增 / 改 / 删行后，看板几秒内自动更新 · 在此新增的行动计划会保存到多维表格的行动计划表 · 仅显示您账号有权限的数据"],
+["ป้าย", "เชื่อม Feishu แล้ว · {#} ลูกค้า", "Connected to Feishu · {#} customers", "已连接飞书 · {#} 个客户"],
+["ป้าย", "โหลดข้อมูลจาก Feishu ใหม่แล้ว", "Reloaded data from Feishu", "已重新加载飞书数据"],
+["ป้าย", "กำลังเชื่อมต่อ Feishu Base ...", "Connecting to Feishu Base ...", "正在连接飞书多维表格 ..."],
+["ป้าย", "กำลังอ่านข้อมูลจาก Feishu · {*} ...", "Reading data from Feishu · {*} ...", "正在读取飞书数据 · {*} ..."],
+["ป้าย", "กำลังซิงก์", "Syncing", "同步中"],
+["ป้าย", "กำลังเชื่อม", "Connecting", "连接中"],
+["ป้าย", "Real-time", "Real-time", "实时"],
+["ปุ่ม", "🔄 โหลดใหม่", "🔄 Reload", "🔄 重新加载"],
+["ป้าย", "ตารางข้อมูลเข้าพบใน Feishu Base", "Visit data table in Feishu Base", "飞书多维表格中的拜访数据表"],
+["ป้าย", "โหลดข้อมูลจาก Feishu ใหม่", "Reload data from Feishu", "重新加载飞书数据"],
+["ป้าย", "อ่านข้อมูลจาก Feishu ไม่ได้: {*}", "Cannot read data from Feishu: {*}", "无法读取飞书数据：{*}"],
+["ป้าย", "{*} · ใช้การอัปโหลด XLSX ได้ตามปกติ", "{*} · XLSX upload still works as usual", "{*} · 仍可照常上传 XLSX"],
+["ป้าย", "หน้านี้ไม่ได้เปิดเป็น Plugin ใน Feishu Base", "This page is not open as a plugin in Feishu Base", "本页面未作为飞书多维表格插件打开"],
+["ป้าย", "ข้อมูลกลางซิงก์กับ Feishu แล้ว", "Shared data synced with Feishu", "共享数据已与飞书同步"],
+["ป้าย", "เชื่อมแล้ว", "Connected", "已连接"],
+["ป้าย", "จะสร้างตารางให้อัตโนมัติเมื่อมีข้อมูลแรก", "The table is created automatically with the first record", "首条数据写入时自动创建表格"],
+["ป้าย", "ส่งข้อมูลเข้า Feishu แล้ว {#} รายการ", "Sent {#} records to Feishu", "已发送 {#} 条数据到飞书"],
+["ป้าย", "อ่านข้อมูลจากตารางใน Base นี้โดยตรง · เพิ่ม / แก้ / ลบแถวใน Feishu แล้ว Dashboard อัปเดตเองภายในไม่กี่วินาที · การแก้ไขข้อมูล · Action Plan · Audit Call · ข้อมูลซ้ำ · ฐาน DP · Log บันทึกลง Base ให้ทุกคนเห็นตรงกัน · เห็นเฉพาะข้อมูลที่บัญชีคุณมีสิทธิ์", "Reads this Base's tables directly · add / edit / delete rows in Feishu and the dashboard updates within seconds · Data edits · Action Plan · Audit Call · Duplicates · DP master · Log are saved to the Base so everyone sees the same · you only see data your account can access", "直接读取本多维表格中的数据 · 在飞书中增 / 改 / 删行后，看板几秒内自动更新 · 数据修改 · 行动计划 · Audit Call · 重复数据 · DP 主数据 · 日志均保存到多维表格，所有人看到的一致 · 仅显示您账号有权限的数据"],
+["ป้าย", "ส่ง Action Plan ที่บันทึกไว้ในเครื่องนี้ {#} รายการ เข้าตาราง Action Plan ใน Feishu?", "Send {#} Action Plans saved on this device to the Action Plan table in Feishu?", "将本机保存的 {#} 条行动计划发送到飞书行动计划表？"]
 ];
 
 /* ---------- ภาษา 3 ภาษา + คลังคำศัพท์ (Vocabulary) ----------
@@ -15105,6 +15160,961 @@ $("storeClear").onclick = () => {
 refreshFilterUI();
 translateTree(document.body);
 liveInit();
+</script>
+
+<script type="module">
+/* =========================================================
+   Feishu / Lark Base connector — อ่านแบบ Real-time + บันทึก Action Plan กลับเข้า Base
+   - ทำงานเฉพาะเมื่อหน้านี้ถูกเปิดเป็น Plugin ภายใน Feishu Base (อยู่ใน iframe)
+   - เปิด URL ตรง ๆ นอก Feishu = Template อัปโหลด XLSX แบบเดิม ไม่มีข้อมูลใด ๆ
+   - คุยกับ Feishu ผ่าน Base JS SDK (postMessage ไปที่หน้าต่าง Feishu เท่านั้น) ไม่ส่งข้อมูลไปเซิร์ฟเวอร์อื่น
+   - อ่าน / เขียน ด้วยสิทธิ์ของผู้ใช้ที่เปิดอยู่ใน Base — ไม่มีสิทธิ์แก้ไข = เขียนไม่ได้ (ข้อมูลรอส่งเก็บในเครื่อง)
+   - Action Plan: ตาราง "Action Plan" แยกใน Base เดียวกัน · คอลัมน์ "ลูกค้า" ลิงก์ไปแถวลูกค้าในตารางหลัก
+========================================================= */
+const FS_SDK_URL = "https://cdn.jsdelivr.net/npm/@lark-base-open/js-sdk@1.0.2/+esm";
+const FS_TABLE_KEY = "r04-feishu-table";
+const FS_PENDING_KEY = "r04-dashboard-fs-pending";
+const FS_ACTION_TABLE_NAME = "Action Plan";
+const FS_DATE_TYPES = [5, 1001, 1002];       // DateTime · CreatedTime · ModifiedTime
+const FT = { Text:1, Number:2, SingleSelect:3, MultiSelect:4, DateTime:5, SingleLink:18, DuplexLink:21 };
+const FS = {
+  bitable:null, table:null, tableId:"", tableName:"", dpTable:null, actionTable:null, actionMeta:[],
+  unsub:[], timer:null, loading:false, first:true,
+  actionRec:new Map(),          // Action ID → record ID ใน Base
+  queue:new Map(),              // Action ID → Promise (ส่งทีละรายการตามลำดับ)
+  pending:{}                    // Action ID → { op:"upsert"|"delete", action, at }
+};
+
+// คอลัมน์ของตาราง Action Plan (ชื่อเดียวกับ Export XLSX)
+const FS_ACTION_FIELDS = [
+  { name:"Action ID", type:FT.Text },
+  { name:"ลูกค้า", type:FT.SingleLink, link:true },
+  { name:"Record ID / Customer Key", type:FT.Text },
+  { name:"แผนก", type:FT.SingleSelect, options:() => ActionDepartments },
+  { name:"รายละเอียด", type:FT.Text },
+  { name:"เจ้าของงาน", type:FT.Text },
+  { name:"กำหนดเสร็จ", type:FT.DateTime, date:true },
+  { name:"ระดับความสำคัญ", type:FT.SingleSelect, options:() => ["สูง", "กลาง", "ต่ำ"] },
+  { name:"สถานะ", type:FT.SingleSelect, options:() => ActionStatuses },
+  { name:"วันที่สร้าง", type:FT.DateTime, date:true },
+  { name:"อัปเดตล่าสุด", type:FT.DateTime, date:true },
+  { name:"บันทึกโดย", type:FT.Text },
+  { name:"ไฟล์ต้นทาง", type:FT.Text }
+];
+
+const fsInFrame = (() => { try { return window.self !== window.top; } catch (_) { return true; } })();
+if (fsInFrame) fsInit();
+
+function fsTimeout(promise, ms, message) {
+  return Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error(message)), ms))]);
+}
+
+function fsStatus(textValue, tone = "gray", badge = "") {
+  $("fileStatus").textContent = textValue;
+  $("dataStatus").className = `badge badge-${tone}`;
+  if (badge) $("dataStatus").textContent = badge;
+}
+
+function fsErr(error) {
+  const m = String(error?.message || error || "");
+  return /permission|denied|forbidden|no auth|权限|无权/i.test(m) ? "บัญชีนี้ไม่มีสิทธิ์แก้ไขตารางใน Base" : (m || "ไม่ทราบสาเหตุ");
+}
+
+// ค่าในเซลล์ Base → ข้อความ/ตัวเลขแบบเดียวกับที่อ่านจาก XLSX
+function fsCell(value, type) {
+  if (value === null || value === undefined) return "";
+  if (FS_DATE_TYPES.includes(type) && typeof value === "number") {
+    const d = new Date(value);
+    return `${localISO(d)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  }
+  if (typeof value === "number") return value;
+  if (typeof value === "boolean") return value ? "ใช่" : "";
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    if (value.every(x => x && typeof x === "object" && "type" in x && "text" in x)) return value.map(x => x.text ?? "").join("");
+    return value.map(x => fsCell(x, type)).filter(x => x !== "" && x !== null && x !== undefined).join(", ");
+  }
+  if (typeof value === "object") return value.text ?? value.name ?? value.fullAddress ?? value.address ?? value.value ?? value.link ?? "";
+  return String(value);
+}
+
+async function fsReadTable(table) {
+  const metas = await table.getFieldMetaList();
+  let ordered = metas;
+  try {   // เรียงคอลัมน์ตามมุมมองแรกของตาราง (ถ้าอ่านได้)
+    const views = await table.getViewList();
+    const ids = await (views[0].getVisibleFieldIdList?.() ?? views[0].getFieldIdList());
+    const byId = new Map(metas.map(m => [m.id, m]));
+    ordered = [...ids.map(id => byId.get(id)).filter(Boolean), ...metas.filter(m => !ids.includes(m.id))];
+  } catch (_) {
+    ordered = [...metas.filter(m => m.isPrimary), ...metas.filter(m => !m.isPrimary)];
+  }
+  const rows = [];
+  let pageToken;
+  do {
+    const res = await table.getRecords({ pageSize:500, pageToken });
+    (res.records || []).forEach(record => {
+      const row = {};
+      ordered.forEach(m => {
+        const v = record.fields?.[m.id];
+        row[m.name] = fsCell(v, m.type);
+        if ((m.type === FT.SingleLink || m.type === FT.DuplexLink) && v) {
+          (row.__links ||= {})[m.name] = v.recordIds || v.record_ids || [];
+        }
+      });
+      row.__baseRecordId = record.recordId;
+      rows.push(row);
+    });
+    pageToken = res.hasMore ? res.pageToken : undefined;
+  } while (pageToken);
+  return { headers:ordered.map(m => m.name), rows, metas };
+}
+
+function fsWorkbook(rows, sheetName) {
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.map(r => {
+    const out = {};
+    Object.keys(r).forEach(k => { if (!k.startsWith("__")) out[k] = r[k]; });
+    return out;
+  })), sheetName.slice(0, 31));
+  return wb;
+}
+
+/* ---------- รายการรอส่ง (เก็บในเครื่องจนกว่า Base จะรับ) ---------- */
+function fsLoadPending() {
+  try { FS.pending = JSON.parse(localStorage.getItem(FS_PENDING_KEY) || "{}") || {}; } catch (_) { FS.pending = {}; }
+}
+function fsSavePending() {
+  try {
+    if (Object.keys(FS.pending).length) localStorage.setItem(FS_PENDING_KEY, JSON.stringify(FS.pending));
+    else localStorage.removeItem(FS_PENDING_KEY);
+  } catch (_) {}
+  fsRenderActionBar();
+}
+
+// Action ในตาราง Base → รูปแบบเดียวกับ Dashboard · รายการรอส่งทับค่าใน Base
+function fsActionsFromBase(rows, mainRows = []) {
+  FS.actionRec = new Map();
+  const byBaseId = new Map(mainRows.map(r => [r.__baseRecordId, r]));
+  const list = [];
+  rows.forEach(r => {
+    const id = text(r["Action ID"]);
+    if (id === "-" && !isFilled(r["รายละเอียด"])) return;
+    const action = {};
+    FS_ACTION_FIELDS.forEach(f => {
+      if (f.link) return;
+      let v = r[f.name] ?? "";
+      if (f.date && typeof v === "string") v = v.replace(/\s+00:00$/, "");
+      action[f.name] = v;
+    });
+    if (id === "-") action["Action ID"] = `ACT-${r.__baseRecordId}`;
+    // แถวที่เพิ่มใน Feishu เอง: เลือกแค่ลูกค้าในคอลัมน์ "ลูกค้า" ก็ผูกกับลูกค้าใน Dashboard ได้
+    const linked = byBaseId.get(r.__links?.["ลูกค้า"]?.[0]);
+    if (!isFilled(action["Record ID / Customer Key"]) && linked) {
+      action["Record ID / Customer Key"] = `${text(linked[App.columns.id])} | ${isFilled(linked[App.columns.name]) ? text(linked[App.columns.name]) : ""}`;
+    }
+    if (!isFilled(action["สถานะ"])) action["สถานะ"] = "ยังไม่เริ่ม";
+    FS.actionRec.set(action["Action ID"], r.__baseRecordId);
+    list.push(action);
+  });
+  Object.entries(FS.pending).forEach(([id, p]) => {
+    const i = list.findIndex(a => a["Action ID"] === id);
+    if (p.op === "delete") { if (i >= 0) list.splice(i, 1); }
+    else if (i >= 0) list[i] = { ...list[i], ...p.action };
+    else list.push(p.action);
+  });
+  return list;
+}
+
+/* ---------- เขียนค่าลง Base ตามชนิดคอลัมน์ ---------- */
+function fsDateValue(value) {
+  const m = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime() : null;
+}
+
+async function fsSelectValue(meta, name, table = FS.actionTable) {
+  let current = meta;
+  const find = () => (current.property?.options || []).find(o => o.name === name);
+  let option = find();
+  if (!option && table) {
+    try {   // ตัวเลือกยังไม่มีในคอลัมน์ → เพิ่มให้ (ถ้ามีสิทธิ์)
+      const field = await table.getFieldById(meta.id);
+      await field.addOption(name);
+      const metas = await table.getFieldMetaList();
+      if (table === FS.actionTable) FS.actionMeta = metas;
+      current = metas.find(m => m.id === meta.id) || meta;
+      meta.property = current.property;
+      option = find();
+    } catch (_) {}
+  }
+  return option ? { id:option.id, text:option.name } : undefined;
+}
+
+async function fsCellValue(meta, value, customerRecordId, table = FS.actionTable) {
+  switch (meta.type) {
+    case FT.Text: return String(value ?? "").trim() ? [{ type:"text", text:String(value) }] : null;
+    case FT.Number: { if (!isFilled(value)) return null; const n = Number(String(value).replace(/,/g, "")); return Number.isFinite(n) ? n : undefined; }
+    case FT.DateTime: return isFilled(value) ? (fsDateValue(value) ?? undefined) : null;
+    case FT.SingleSelect: return isFilled(value) ? fsSelectValue(meta, String(value), table) : null;
+    case FT.MultiSelect: {
+      if (!isFilled(value)) return null;
+      const out = [];
+      for (const part of String(value).split(/\s*[,，]\s*/).filter(Boolean)) {
+        const o = await fsSelectValue(meta, part, table);
+        if (!o) return undefined;
+        out.push(o);
+      }
+      return out;
+    }
+    case 13: return isFilled(value) ? String(value) : null;   // Phone
+    case FT.SingleLink:
+    case FT.DuplexLink: {
+      const tableId = meta.property?.tableId || FS.tableId;
+      if (!customerRecordId || tableId !== FS.tableId) return undefined;
+      return { recordIds:[customerRecordId], tableId, record_ids:[customerRecordId], table_id:tableId, text:"", type:"text" };
+    }
+    default: return undefined;   // คอลัมน์ชนิดอื่น (สูตร / ผู้ใช้ ฯลฯ) ไม่เขียนทับ
+  }
+}
+
+async function fsActionFields(action) {
+  const row = actionRow(action);
+  const customerRecordId = row?.__baseRecordId || "";
+  const values = { ...action, "บันทึกโดย": action["บันทึกโดย"] || App.userName || "" };
+  const fields = {};
+  for (const f of FS_ACTION_FIELDS) {
+    const meta = FS.actionMeta.find(m => m.name === f.name);
+    if (!meta) continue;
+    const v = await fsCellValue(meta, f.link ? null : values[f.name], customerRecordId);
+    if (v !== undefined) fields[meta.id] = v;
+  }
+  return fields;
+}
+
+// เพิ่มคอลัมน์ที่ขาดในตาราง Action Plan (ทำครั้งเดียวต่อการเชื่อม · ไม่มีสิทธิ์ = ข้าม)
+async function fsEnsureActionFields() {
+  if (!FS.actionTable || FS.ensured) return;
+  FS.ensured = true;
+  FS.actionMeta = await FS.actionTable.getFieldMetaList();
+  for (const f of FS_ACTION_FIELDS) {
+    if (FS.actionMeta.some(m => m.name === f.name)) continue;
+    try { await FS.actionTable.addField(fsFieldConfig(f)); } catch (e) { console.warn("addField", f.name, e); }
+  }
+  FS.actionMeta = await FS.actionTable.getFieldMetaList();
+}
+
+function fsFieldConfig(f) {
+  if (f.link) return { name:f.name, type:FT.SingleLink, property:{ tableId:FS.tableId, multiple:false } };
+  if (f.options) return { name:f.name, type:FT.SingleSelect, property:{ options:f.options().map(name => ({ name })) } };
+  if (f.date) return { name:f.name, type:FT.DateTime, property:{ dateFormat:"yyyy-MM-dd" } };
+  return { name:f.name, type:f.type };
+}
+
+/* ---------- ส่ง Action Plan เข้า Base ---------- */
+function fsQueue(id, job) {
+  const prev = FS.queue.get(id) || Promise.resolve();
+  const next = prev.catch(() => {}).then(job);
+  FS.queue.set(id, next);
+  next.finally(() => { if (FS.queue.get(id) === next) FS.queue.delete(id); }).catch(() => {});
+  return next;
+}
+
+async function fsPushOne(id) {
+  const p = FS.pending[id];
+  if (!p || !FS.actionTable) return;
+  await fsEnsureActionFields();
+  const recordId = FS.actionRec.get(id);
+  if (p.op === "delete") {
+    if (recordId) await FS.actionTable.deleteRecord(recordId);
+    FS.actionRec.delete(id);
+  } else {
+    const fields = await fsActionFields(p.action);
+    if (recordId) await FS.actionTable.setRecord(recordId, { fields });
+    else FS.actionRec.set(id, await FS.actionTable.addRecord({ fields }));
+  }
+  if (FS.pending[id] === p) delete FS.pending[id];   // ถ้าระหว่างส่งมีการแก้ใหม่ เก็บรายการใหม่ไว้ส่งรอบถัดไป
+  fsSavePending();
+}
+
+async function fsFlush({ quiet = true } = {}) {
+  const ids = Object.keys(FS.pending);
+  if (!ids.length || !FS.actionTable) return 0;
+  let ok = 0, lastError = null;
+  for (const id of ids) {
+    try { await fsQueue(id, () => fsPushOne(id)); ok++; }
+    catch (e) { lastError = e; console.warn("Action sync", id, e); }
+  }
+  if (lastError && !quiet) showToast(`ส่งเข้า Feishu ไม่สำเร็จ: ${fsErr(lastError)} — เก็บไว้ในเครื่อง จะส่งใหม่อัตโนมัติ`);
+  else if (ok && !quiet) showToast(`ส่ง Action Plan เข้า Feishu แล้ว ${ok} รายการ`);
+  return ok;
+}
+
+// เรียกจาก Dashboard ทุกครั้งที่เพิ่ม / แก้ / ลบ Action Plan
+function fsActionChanged(kind, action) {
+  if (!App.fsMode || !action) return;
+  const id = action["Action ID"];
+  FS.pending[id] = kind === "delete"
+    ? { op:"delete", at:Date.now() }
+    : { op:"upsert", action:{ ...action }, at:Date.now() };
+  fsSavePending();
+  if (!FS.actionTable) {
+    showToast("ยังไม่มีตาราง Action Plan ใน Feishu — บันทึกไว้ในเครื่องก่อน กด \"สร้างตาราง Action Plan\" ที่หน้า Action Plan");
+    return;
+  }
+  fsQueue(id, () => fsPushOne(id))
+    .then(() => showToast(kind === "delete" ? "ลบ Action Plan ใน Feishu แล้ว" : "บันทึก Action Plan ลง Feishu แล้ว"))
+    .catch(e => {
+      console.warn(e);
+      showToast(`ส่งเข้า Feishu ไม่สำเร็จ: ${fsErr(e)} — เก็บไว้ในเครื่อง จะส่งใหม่อัตโนมัติ`);
+    });
+}
+window.fsActionChanged = fsActionChanged;
+
+/* ---------- สร้างตาราง Action Plan ใน Base ---------- */
+async function fsCreateActionTable() {
+  if (!FS.bitable || !FS.tableId) return;
+  try {
+    const fields = FS_ACTION_FIELDS.map(fsFieldConfig);
+    await FS.bitable.base.addTable({ name:FS_ACTION_TABLE_NAME, fields });
+    logEvent("action", `สร้างตาราง ${FS_ACTION_TABLE_NAME} ใน Feishu Base`);
+    showToast("สร้างตาราง Action Plan ใน Feishu แล้ว");
+    await fsConnect();
+    await fsFlush({ quiet:false });
+  } catch (e) {
+    console.warn(e);
+    showToast(`สร้างตารางไม่สำเร็จ: ${fsErr(e)} — ให้ผู้ดูแล Base กดสร้าง หรือสร้างตารางชื่อ "Action Plan" เอง`);
+  }
+}
+
+// Action Plan ที่เคยบันทึกไว้ในเครื่อง (ก่อนเชื่อม Feishu) และยังไม่อยู่ใน Base
+function fsLocalOnlyActions() {
+  const stored = loadStore(ACTION_KEY) || [];
+  return stored.filter(a => isFilled(a["Action ID"]) && !FS.actionRec.has(a["Action ID"]) && !FS.pending[a["Action ID"]] && actionRow(a));
+}
+
+async function fsUploadLocal() {
+  const list = fsLocalOnlyActions();
+  if (!list.length) return;
+  if (!confirm(`ส่ง Action Plan ที่บันทึกไว้ในเครื่องนี้ ${list.length} รายการ เข้าตาราง Action Plan ใน Feishu?`)) return;
+  list.forEach(a => { FS.pending[a["Action ID"]] = { op:"upsert", action:{ ...a }, at:Date.now() }; });
+  fsSavePending();
+  await fsFlush({ quiet:false });
+}
+
+/* ---------- แถบสถานะบนหน้า Action Plan ---------- */
+function fsRenderActionBar() {
+  if (!App.fsMode) return;
+  let bar = $("fsActionBar");
+  if (!bar) {
+    bar = document.createElement("div");
+    bar.id = "fsActionBar";
+    bar.className = "panel";
+    bar.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin-bottom:14px;padding:12px 16px";
+    $("page-action").prepend(bar);
+  }
+  fsRenderSyncStrip();
+  const waiting = Object.keys(FS.pending).length;
+  const localOnly = FS.actionTable ? fsLocalOnlyActions().length : 0;
+  const state = !FS.actionTable
+    ? `<span class="badge badge-orange">ยังไม่มีตาราง Action Plan ใน Feishu</span>`
+    : waiting
+      ? `<span class="badge badge-orange">รอส่งเข้า Feishu ${formatNumber(waiting)} รายการ</span>`
+      : `<span class="badge badge-green">ซิงก์กับ Feishu แล้ว</span>`;
+  bar.innerHTML = `
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <strong>Action Plan ↔ Feishu</strong>${state}
+      <span class="muted" style="font-size:calc(12px * var(--fs))">${FS.actionTable
+        ? `ตาราง "${escapeHTML(FS.actionTableName || FS_ACTION_TABLE_NAME)}" · คอลัมน์ "ลูกค้า" ลิงก์ไปแถวลูกค้า · ทุกคนที่เปิด Base เห็นพร้อมกัน`
+        : "กดสร้างตารางครั้งเดียว (ต้องมีสิทธิ์จัดการ Base) แล้ว Action Plan ที่เพิ่มจะบันทึกเข้า Feishu ทันที"}</span>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      ${!FS.actionTable ? `<button class="btn btn-primary btn-sm" id="fsCreateActionTable" type="button">สร้างตาราง Action Plan</button>` : ""}
+      ${FS.actionTable && waiting ? `<button class="btn btn-sm" id="fsFlushNow" type="button">ส่งตอนนี้</button>` : ""}
+      ${FS.actionTable && localOnly ? `<button class="btn btn-sm" id="fsUploadLocal" type="button">ส่ง Action Plan ในเครื่อง (${formatNumber(localOnly)}) เข้า Feishu</button>` : ""}
+    </div>`;
+  if ($("fsCreateActionTable")) $("fsCreateActionTable").onclick = fsCreateActionTable;
+  if ($("fsFlushNow")) $("fsFlushNow").onclick = () => fsFlush({ quiet:false });
+  if ($("fsUploadLocal")) $("fsUploadLocal").onclick = fsUploadLocal;
+  if (typeof translateTree === "function") translateTree(bar);
+}
+
+
+
+/* =========================================================
+   ข้อมูลกลางใน Feishu Base (ทุกคนเห็นตรงกัน แบบ Real-time)
+   · แก้ไขข้อมูลลูกค้า → เขียนทับแถวจริงในตารางหลัก + บันทึกค่าเดิม→ค่าใหม่ในตาราง "Edit Log"
+   · Audit Call → ตาราง "Audit Call" (แก้สถานะ / หมายเหตุใน Feishu ได้)
+   · ข้อมูลซ้ำ ยืนยัน / แยก → ตาราง "Duplicate Review"
+   · ฐาน DP / SHOP → ตาราง DP Master ใน Base (มีอยู่แล้วใช้ตารางเดิม)
+   · Log กิจกรรม → ตาราง "Activity Log" (เพิ่มอย่างเดียว ไม่ลบ)
+   หลักการ: Dashboard ยังทำงานเหมือนเดิมทุกอย่าง · ทุกครั้งที่บันทึก ระบบเทียบกับข้อมูลรอบล่าสุดจาก Base
+   แล้วส่งเฉพาะรายการที่เปลี่ยน · ส่งไม่สำเร็จ = เก็บในเครื่อง (รอส่ง) แล้วส่งใหม่อัตโนมัติ
+========================================================= */
+const FS_QUEUE_KEY = "r04-dashboard-fs-queue";
+const KEYCOL = "Key";
+const JSONCOL = "Data (JSON)";
+const T = s => ({ name:s, type:FT.Text });
+
+function fsHash(v) {
+  const str = JSON.stringify(v);
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) | 0;
+  return String(h);
+}
+const fsLocalTime = iso => { const d = new Date(iso || ""); return isNaN(d) ? String(iso || "") : `${localISO(d)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
+const nowText = () => { const d = new Date(); return `${localISO(d)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`; };
+
+/* ---------- ช่องทางข้อมูล (1 ช่อง = 1 ฟังก์ชันของ Dashboard) ---------- */
+const FS_CHANNELS = [
+  {
+    id:"auditcall", storeKey:AUDITCALL_KEY, table:"Audit Call", label:"Audit Call",
+    columns:[T("รอบ"), T("Record ID"), T("ลูกค้า"), T("เบอร์โทร"), T("จังหวัด"), T("ผู้บันทึกข้อมูล"),
+      { name:"สถานะการโทร", type:FT.SingleSelect, options:() => AuditCallStatuses }, T("หมายเหตุ"), T("ผู้โทร"), T("วันที่โทร"), T("วันที่สุ่ม")],
+    get:() => App.auditCalls,
+    set:v => { App.auditCalls = v; },
+    items:list => list.map(c => ({ id:c.id, json:c, cols:{
+      "รอบ":String(c.batch ?? ""), "Record ID":c.recordId, "ลูกค้า":c.name, "เบอร์โทร":c.phone, "จังหวัด":c.province,
+      "ผู้บันทึกข้อมูล":c.recorder, "สถานะการโทร":c.status, "หมายเหตุ":c.note, "ผู้โทร":c.by, "วันที่โทร":c.at, "วันที่สุ่ม":c.sampledAt } })),
+    // แก้ผลการโทรใน Feishu ได้ → คอลัมน์ที่อ่านง่ายทับค่าใน JSON
+    build:recs => recs.map(r => ({ ...r.json,
+      status:r.cols["สถานะการโทร"] || r.json.status || "ยังไม่โทร", note:r.cols["หมายเหตุ"] ?? r.json.note ?? "",
+      by:r.cols["ผู้โทร"] ?? r.json.by ?? "", at:(r.cols["วันที่โทร"] ?? r.json.at ?? "").replace(/\s+00:00$/, "") }))
+  },
+  {
+    id:"dupsplit", storeKey:DUPSPLIT_KEY, table:"Duplicate Review", label:"ข้อมูลซ้ำ (แยก)", prefix:"split|",
+    columns:[T("ประเภท"), T("Record ID / กลุ่ม"), T("ลูกค้า"), T("โดย"), T("เมื่อ")],
+    get:() => App.dupSplit,
+    set:v => { App.dupSplit = v; },
+    items:obj => Object.entries(obj).map(([k, v]) => ({ id:`split|${k}`, json:{ k, v }, cols:{
+      "ประเภท":"แยกเป็นลูกค้าคนละราย", "Record ID / กลุ่ม":v.recordId || k, "ลูกค้า":v.name || "", "โดย":v.by || "", "เมื่อ":v.at || "" } })),
+    build:recs => Object.fromEntries(recs.map(r => [r.json.k, r.json.v]))
+  },
+  {
+    id:"dupok", storeKey:DUPOK_KEY, table:"Duplicate Review", label:"ข้อมูลซ้ำ (ยืนยัน)", prefix:"ok|",
+    columns:[T("ประเภท"), T("Record ID / กลุ่ม"), T("ลูกค้า"), T("โดย"), T("เมื่อ")],
+    get:() => App.dupConfirmed,
+    set:v => { App.dupConfirmed = v; },
+    items:obj => Object.entries(obj).map(([k, v]) => ({ id:`ok|${k}`, json:{ k, v }, cols:{
+      "ประเภท":"ยืนยันเป็นลูกค้ารายเดียวกัน", "Record ID / กลุ่ม":v.records || k, "ลูกค้า":v.name || "", "โดย":v.by || "", "เมื่อ":v.at || "" } })),
+    build:recs => Object.fromEntries(recs.map(r => [r.json.k, r.json.v]))
+  },
+  {
+    id:"log", storeKey:LOG_KEY, table:"Activity Log", label:"Log กิจกรรม", appendOnly:true, lazy:true,
+    columns:[T("เวลา"), T("ประเภท"), T("รายละเอียด"), T("ผู้ใช้"), T("บทบาท"), T("ไฟล์")],
+    get:() => App.log,
+    set:v => { App.log = v; },
+    items:list => list.map(e => ({ id:`L|${e.at}|${fsHash([e.type, e.detail, e.user])}`, json:e, cols:{
+      "เวลา":e.at, "ประเภท":LogTypes[e.type] || e.type, "รายละเอียด":e.detail, "ผู้ใช้":e.user, "บทบาท":e.role, "ไฟล์":e.file } })),
+    build:recs => recs.map(r => r.json).filter(e => e && e.at).sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, LOG_LIMIT)
+  },
+  {
+    id:"edit", storeKey:EDIT_KEY, table:"Edit Log", label:"การแก้ไขข้อมูล", appendOnly:true, edits:true,
+    columns:[T("Record ID"), T("ลูกค้า"), T("ฟิลด์"), T("ค่าเดิม"), T("ค่าใหม่"), T("แก้ไขโดย"), T("แก้ไขเมื่อ"), T("ผลการเขียนในตารางหลัก")],
+    get:() => App.edits,
+    set:v => { App.edits = v; },
+    // 1 รายการ = 1 ฟิลด์ที่เปลี่ยน (คีย์ = Record + ฟิลด์ + ค่าใหม่ → แก้ซ้ำค่าเดิมไม่ส่งซ้ำ)
+    items:obj => Object.entries(obj).flatMap(([key, st]) => Object.entries(st.values || {}).map(([field, value]) => ({
+      id:`E|${key}|${field}|${fsHash(value)}`, json:{ key, field, value, original:st.original?.[field] ?? "", at:st.at, name:st.name, recordId:st.recordId, fp:st.fp, by:st.by || App.userName || "" },
+      cols:{ "Record ID":st.recordId || key, "ลูกค้า":String(st.name ?? ""), "ฟิลด์":field, "ค่าเดิม":String(st.original?.[field] ?? ""), "ค่าใหม่":String(value ?? ""),
+        "แก้ไขโดย":st.by || App.userName || "", "แก้ไขเมื่อ":fsLocalTime(st.at) } }))),
+    build:() => null   // สร้างจากแถวหลักใน fsBuildEdits()
+  }
+];
+const FS_CH = Object.fromEntries(FS_CHANNELS.map(c => [c.storeKey, c]));
+
+FS.tables = {};
+FS.subscribed = new Set();
+FS.ch = {};            // ช่อง → { table, meta, rec:Map(id→recordId), snap:Map(id→hash) }
+FS.q = {};             // คิวรอส่ง: "ช่อง|id" → { ch, op, id, item }
+FS.ready = false;
+FS.dp = { table:null, meta:[], snap:new Map(), cols:{} };
+
+function fsLoadQueue() { try { FS.q = JSON.parse(localStorage.getItem(FS_QUEUE_KEY) || "{}") || {}; } catch (_) { FS.q = {}; } }
+function fsSaveQueue() {
+  try { Object.keys(FS.q).length ? localStorage.setItem(FS_QUEUE_KEY, JSON.stringify(FS.q)) : localStorage.removeItem(FS_QUEUE_KEY); } catch (_) {}
+  fsRenderSyncStrip();
+}
+
+/* ---------- ตารางของแต่ละช่อง: หา / สร้าง / เพิ่มคอลัมน์ที่ขาด ---------- */
+function fsChannelColumns(name) {
+  const cols = [{ name:KEYCOL, type:FT.Text }];
+  FS_CHANNELS.filter(c => c.table === name).forEach(c => c.columns.forEach(col => { if (!cols.some(x => x.name === col.name)) cols.push(col); }));
+  cols.push({ name:JSONCOL, type:FT.Text });
+  return cols;
+}
+
+async function fsEnsureTable(name, create = true) {
+  const known = FS.tables?.[name];
+  if (known?.table) return known;
+  const metas = await FS.bitable.base.getTableMetaList();
+  let found = metas.find(m => m.name === name);
+  if (!found && create) {
+    const res = await FS.bitable.base.addTable({ name, fields:fsChannelColumns(name).map(fsFieldConfig) });
+    found = { id:res.tableId, name };
+    logEvent("system", `สร้างตาราง ${name} ใน Feishu Base`);
+  }
+  if (!found) return null;
+  const table = await FS.bitable.base.getTableById(found.id);
+  let meta = await table.getFieldMetaList();
+  for (const col of fsChannelColumns(name)) {   // ตารางที่มีอยู่แล้วแต่คอลัมน์ไม่ครบ → เพิ่มให้
+    if (meta.some(m => m.name === col.name)) continue;
+    try { await table.addField(fsFieldConfig(col)); } catch (e) { console.warn("addField", name, col.name, e); }
+  }
+  meta = await table.getFieldMetaList();
+  FS.tables[name] = { table, meta, id:found.id };
+  fsSubscribe(table);
+  return FS.tables[name];
+}
+
+function fsSubscribe(table) {
+  if (FS.subscribed.has(table)) return;
+  FS.subscribed.add(table);
+  ["onRecordAdd", "onRecordModify", "onRecordDelete"].forEach(ev => {
+    try { const off = table[ev]?.(() => fsSchedule()); if (typeof off === "function") FS.unsub.push(off); } catch (_) {}
+  });
+}
+
+async function fsFieldsFor(entry, cols, extra = {}) {
+  const fields = {};
+  for (const m of entry.meta) {
+    if (!(m.name in cols)) continue;
+    const v = await fsCellValue(m, cols[m.name], extra.customer, entry.table);
+    if (v !== undefined) fields[m.id] = v;
+  }
+  return fields;
+}
+
+/* ---------- อ่านข้อมูลกลางจาก Base ---------- */
+async function fsReadChannels({ full = true } = {}) {
+  const byTable = {};
+  for (const name of [...new Set(FS_CHANNELS.map(c => c.table))]) {
+    if (!full && FS_CHANNELS.every(c => c.table !== name || c.lazy)) { byTable[name] = undefined; continue; }
+    const entry = await fsEnsureTable(name, false).catch(() => null);
+    byTable[name] = entry ? (await fsReadTable(entry.table)).rows : null;
+  }
+  const out = {};
+  FS_CHANNELS.forEach(c => {
+    const rows = byTable[c.table];
+    if (rows === undefined) return;   // ไม่ได้อ่านรอบนี้ (Log อ่านเป็นระยะ) → ใช้ของเดิม
+    const state = FS.ch[c.id] = { rec:new Map(), snap:new Map(), exists:!!rows };
+    const recs = [];
+    (rows || []).forEach(r => {
+      const id = text(r[KEYCOL]);
+      if (id === "-" || (c.prefix && !id.startsWith(c.prefix)) || (!c.prefix && FS_CHANNELS.some(o => o.table === c.table && o.prefix && id.startsWith(o.prefix)))) return;
+      let json = null;
+      try { json = JSON.parse(r[JSONCOL] || "null"); } catch (_) {}
+      if (!json) return;
+      state.rec.set(id, r.__baseRecordId);
+      recs.push({ id, json, cols:r });
+    });
+    out[c.id] = recs;
+  });
+  return out;   // ช่องที่ไม่ได้อ่านรอบนี้ไม่มีใน out
+}
+
+// การแก้ไขจาก Edit Log → ป้าย "แก้ไขแล้ว" + ชีต Audit Edits / Report (ไม่ทับค่าที่มีคนแก้ใน Feishu ภายหลัง)
+function fsBuildEdits(recs, mainRows) {
+  const byId = new Map();
+  mainRows.forEach(r => byId.set(text(r[App.columns.id]), r));
+  const edits = {};
+  recs.sort((a, b) => String(a.json.at || "").localeCompare(String(b.json.at || ""))).forEach(({ json:e }) => {
+    const row = byId.get(text(e.recordId));
+    if (!row || String(row[e.field] ?? "").trim() !== String(e.value ?? "").trim()) return;
+    const st = edits[e.key] ||= { values:{}, original:{}, at:e.at, name:e.name, recordId:e.recordId, fp:e.fp, by:e.by };
+    st.values[e.field] = e.value;
+    if (!(e.field in st.original)) st.original[e.field] = e.original;
+    st.at = e.at; st.by = e.by;
+  });
+  return edits;
+}
+
+function fsApplyQueue(c, value) {
+  // รายการที่ยังส่งไม่สำเร็จ → ทับค่าจาก Base (ผู้ใช้เครื่องนี้ยังเห็นสิ่งที่ตัวเองบันทึก)
+  const mine = Object.values(FS.q).filter(q => q.ch === c.id);
+  if (!mine.length) return value;
+  if (c.edits) {
+    mine.filter(q => q.op === "upsert").forEach(({ item:{ json:e } }) => {
+      const st = value[e.key] ||= { values:{}, original:{}, at:e.at, name:e.name, recordId:e.recordId, fp:e.fp, by:e.by };
+      st.values[e.field] = e.value;
+      if (!(e.field in st.original)) st.original[e.field] = e.original;
+    });
+    return value;
+  }
+  const items = new Map(c.items(value).map(i => [i.id, i]));
+  mine.forEach(q => { if (q.op === "delete") items.delete(q.id); else items.set(q.id, q.item); });
+  return c.build([...items.values()].map(i => ({ id:i.id, json:i.json, cols:{} })));
+}
+
+/* ---------- ฐาน DP ใน Base ---------- */
+function fsDpFromRows(rows, headers) {
+  const pick = aliases => headers.find(h => aliases.some(a => h.trim().toLowerCase() === a.toLowerCase()));
+  const map = {};
+  DpFields.forEach(([key, , aliases]) => { map[key] = pick(aliases); });
+  FS.dp.cols = map;
+  if (!map.dp || !map.province) return null;
+  return rows.map(r => {
+    const out = { source:"file", rid:r.__baseRecordId };
+    DpFields.forEach(([key]) => { out[key] = map[key] ? String(r[map[key]] ?? "").trim() : ""; });
+    out.province = normProvince(out.province);
+    out.dp = normDP(out.dp);
+    return out;
+  }).filter(r => r.province || r.dp);
+}
+
+// ส่งเฉพาะแถวที่คนยืนยัน / แก้ / เพิ่มเอง · DP ที่ระบบเพิ่มอัตโนมัติ (รอยืนยัน) และพื้นที่พิเศษ ไม่ส่ง
+const fsDpSyncable = r => r.source !== "system" && !(r.source === "auto" && r.status === DP_STATUS_NEW);
+const fsDpCols = r => Object.fromEntries(DpFields.filter(([k]) => k !== "key").map(([k, label]) => [FS.dp.cols[k] || label, r[k] ?? ""]));
+const fsDpId = r => r.rid || `new|${normDP(r.dp)}|${r.province}|${r.district}|${r.subdistrict}`;
+
+/* ---------- เทียบกับรอบล่าสุด → เข้าคิวเฉพาะที่เปลี่ยน ---------- */
+function fsDiff(storeKey) {
+  if (!FS.ready) return;
+  if (storeKey === DP_KEY) {
+    const now = new Map();
+    App.dpMaster.filter(fsDpSyncable).forEach(r => {
+      const id = fsDpId(r), h = fsHash(fsDpCols(r));
+      now.set(id, h);
+      if (FS.dp.snap.get(id) !== h) FS.q[`dp|${id}`] = { ch:"dp", op:"upsert", id, item:{ cols:fsDpCols(r) } };
+    });
+    FS.dp.snap.forEach((h, id) => { if (!now.has(id) && !id.startsWith("new|")) FS.q[`dp|${id}`] = { ch:"dp", op:"delete", id }; });
+    FS.dp.snap = now;
+  } else {
+    const c = FS_CH[storeKey];
+    const st = FS.ch[c.id];
+    const now = new Map();
+    c.items(c.get()).forEach(i => {
+      const h = fsHash([i.cols, i.json]);
+      now.set(i.id, h);
+      if (st.snap.get(i.id) !== h) FS.q[`${c.id}|${i.id}`] = { ch:c.id, op:"upsert", id:i.id, item:i };
+    });
+    if (!c.appendOnly) st.snap.forEach((h, id) => { if (!now.has(id)) FS.q[`${c.id}|${id}`] = { ch:c.id, op:"delete", id }; });
+    st.snap = c.appendOnly ? new Map([...st.snap, ...now]) : now;
+  }
+  fsSaveQueue();
+  fsFlushQueue();
+}
+
+/* ---------- ส่งคิวเข้า Base ---------- */
+async function fsPushQueued(qk) {
+  const q = FS.q[qk];
+  if (!q) return;
+  if (q.ch === "dp") {
+    let entry = FS.dp.table ? FS.dp : null;
+    if (!entry) {
+      const t = await fsEnsureTable("DP Master", false) || await fsCreateDpTable();
+      FS.dp.table = t.table; FS.dp.meta = t.meta; entry = FS.dp;
+      DpFields.forEach(([k, label]) => { FS.dp.cols[k] ||= label; });
+    }
+    if (q.op === "delete") await entry.table.deleteRecord(q.id);
+    else {
+      const fields = await fsFieldsFor(entry, q.item.cols);
+      if (q.id.startsWith("new|")) {
+        const rid = await entry.table.addRecord({ fields });
+        const r = App.dpMaster.find(x => !x.rid && fsDpId(x) === q.id);
+        if (r) { r.rid = rid; FS.dp.snap.delete(q.id); FS.dp.snap.set(rid, fsHash(fsDpCols(r))); }
+      } else await entry.table.setRecord(q.id, { fields });
+    }
+  } else {
+    const c = FS_CHANNELS.find(x => x.id === q.ch);
+    const entry = await fsEnsureTable(c.table, true);
+    const st = FS.ch[c.id];
+    if (q.op === "delete") {
+      const rid = st.rec.get(q.id);
+      if (rid) await entry.table.deleteRecord(rid);
+      st.rec.delete(q.id);
+    } else {
+      if (c.edits) await fsWriteMainRow(q.item.json, q.item.cols);
+      const fields = await fsFieldsFor(entry, { ...q.item.cols, [KEYCOL]:q.id, [JSONCOL]:JSON.stringify(q.item.json) });
+      const rid = st.rec.get(q.id);
+      if (rid) await entry.table.setRecord(rid, { fields });
+      else st.rec.set(q.id, await entry.table.addRecord({ fields }));
+    }
+  }
+  if (FS.q[qk] === q) delete FS.q[qk];
+  fsSaveQueue();
+}
+
+// แก้ไขข้อมูลลูกค้า → เขียนทับแถวจริงในตารางหลัก
+async function fsWriteMainRow(e, cols) {
+  const row = App.rawRows.find(r => recordKey(r) === e.key) || App.rawRows.find(r => r.__recordId === e.recordId);
+  const rid = row?.__baseRecordId;
+  if (!rid) { cols["ผลการเขียนในตารางหลัก"] = "ไม่พบแถวในตารางหลัก"; return; }
+  const meta = FS.mainMeta.find(m => m.name === e.field);
+  if (!meta) { cols["ผลการเขียนในตารางหลัก"] = "ไม่พบคอลัมน์ในตารางหลัก"; return; }
+  const v = await fsCellValue(meta, e.value, null, FS.table);
+  if (v === undefined) { cols["ผลการเขียนในตารางหลัก"] = "คอลัมน์ชนิดนี้แก้จาก Dashboard ไม่ได้ (เช่น สูตร / ผู้ใช้)"; return; }
+  await FS.table.setRecord(rid, { fields:{ [meta.id]:v } });
+  cols["ผลการเขียนในตารางหลัก"] = "เขียนแล้ว";
+}
+
+async function fsCreateDpTable() {
+  const fields = DpFields.filter(([k]) => k !== "key").map(([, label]) => ({ name:label, type:FT.Text }));
+  const res = await FS.bitable.base.addTable({ name:"DP Master", fields });
+  logEvent("system", "สร้างตาราง DP Master ใน Feishu Base");
+  const table = await FS.bitable.base.getTableById(res.tableId);
+  fsSubscribe(table);
+  return { table, meta:await table.getFieldMetaList() };
+}
+
+let fsFlushing = null;
+function fsFlushQueue({ quiet = true } = {}) {
+  if (fsFlushing) return fsFlushing.then(() => Object.keys(FS.q).length && fsFlushQueue({ quiet }));
+  fsFlushing = (async () => {
+    let ok = 0, lastError = null;
+    for (const qk of Object.keys(FS.q)) {
+      try { await fsPushQueued(qk); ok++; } catch (e) { lastError = e; console.warn("sync", qk, e); }
+    }
+    if (lastError && (!quiet || !FS.warnedAt || Date.now() - FS.warnedAt > 60000)) {
+      FS.warnedAt = Date.now();
+      showToast(`ส่งเข้า Feishu ไม่สำเร็จ: ${fsErr(lastError)} — เก็บไว้ในเครื่อง จะส่งใหม่อัตโนมัติ`);
+    } else if (ok && !quiet) showToast(`ส่งข้อมูลเข้า Feishu แล้ว ${ok} รายการ`);
+    return ok;
+  })().finally(() => { fsFlushing = null; });
+  return fsFlushing;
+}
+
+/* ---------- แถบสถานะการซิงก์ (ใต้แถบเชื่อมต่อ) ---------- */
+function fsRenderSyncStrip() {
+  if (!App.fsMode) return;
+  let strip = $("fsSyncStrip");
+  if (!strip) {
+    strip = document.createElement("div");
+    strip.id = "fsSyncStrip";
+    strip.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:8px 0 0;font-size:calc(12px * var(--fs))";
+    document.querySelector(".upload-banner").appendChild(strip);
+  }
+  const waiting = Object.keys(FS.q).length + Object.keys(FS.pending).length;
+  const tables = [["Action Plan", !!FS.actionTable], ...[...new Set(FS_CHANNELS.map(c => c.table))].map(n => [n, !!FS.tables[n]]), ["DP Master", !!FS.dp.table]];
+  strip.innerHTML = `
+    <span class="badge ${waiting ? "badge-orange" : "badge-green"}">${waiting ? `รอส่งเข้า Feishu ${formatNumber(waiting)} รายการ` : "ข้อมูลกลางซิงก์กับ Feishu แล้ว"}</span>
+    ${tables.map(([n, ok]) => `<span class="badge ${ok ? "badge-blue" : "badge-gray"}" title="${ok ? "เชื่อมแล้ว" : "จะสร้างตารางให้อัตโนมัติเมื่อมีข้อมูลแรก"}">${ok ? "✓" : "○"} ${escapeHTML(n)}</span>`).join("")}
+    ${waiting ? `<button class="btn btn-sm" id="fsSyncNow" type="button">ส่งตอนนี้</button>` : ""}`;
+  if ($("fsSyncNow")) $("fsSyncNow").onclick = () => { fsFlushQueue({ quiet:false }); fsFlush({ quiet:false }); };
+  if (typeof translateTree === "function") translateTree(strip);
+}
+
+/* ---------- ดักการบันทึกของ Dashboard (saveStore) ในโหมด Feishu ---------- */
+function fsHookStore() {
+  const original = window.saveStore;
+  window.saveStore = function (key, value) {
+    if (App.fsMode && FS.ready && (FS_CH[key] || key === DP_KEY)) {
+      // ข้อมูลกลางอยู่ใน Base — ไม่เขียนลงเครื่อง (รายการรอส่งเก็บแยกในคิว)
+      if (key === EDIT_KEY && value) Object.values(value).forEach(st => { st.by ||= App.userName || ""; });
+      try { fsDiff(key); } catch (e) { console.warn("diff", key, e); }
+      return true;
+    }
+    if (App.fsMode && !FS.ready && (FS_CH[key] || key === DP_KEY)) {
+      return true;   // ระหว่างเชื่อมครั้งแรก ไม่เขียนข้อมูลกลางทับในเครื่อง
+    }
+    return original(key, value);
+  };
+}
+
+// ปุ่มล้างข้อมูลกลาง: ใน Feishu ห้ามล้างทั้งชุดจาก Dashboard (ลบได้ใน Base โดยผู้มีสิทธิ์)
+function fsGuardButtons() {
+  ["dpClear", "logClear", "clearEdits"].forEach(id => {
+    const b = $(id);
+    if (b) { b.style.display = "none"; b.dataset.fsHidden = "1"; }
+  });
+}
+
+/* ---------- โหลดข้อมูลกลางทั้งหมดเข้า Dashboard ---------- */
+async function fsLoadShared(mainRows, metas, { manual = false } = {}) {
+  FS.mainMeta = metas;
+  // Log กิจกรรมโตเรื่อย ๆ → อ่านทั้งหมดเฉพาะครั้งแรก / กดโหลดใหม่ / ทุก 5 นาที
+  const full = FS.first || manual || !FS.logReadAt || Date.now() - FS.logReadAt > 300000;
+  if (full) FS.logReadAt = Date.now();
+  const recs = await fsReadChannels({ full });
+  FS_CHANNELS.forEach(c => {
+    if (!recs[c.id]) return;
+    let value = c.edits ? fsBuildEdits(recs[c.id], mainRows) : c.build(recs[c.id]);
+    value = fsApplyQueue(c, value);
+    c.set(value);
+    // ภาพสถานะล่าสุด (เทียบรอบถัดไป) — ต้องตั้งทันที ก่อน Dashboard บันทึกอะไรระหว่างวาด
+    FS.ch[c.id].snap = new Map(c.items(value).map(i => [i.id, fsHash([i.cols, i.json])]));
+  });
+  // ฐาน DP: อ่านจากตาราง DP ใน Base (ถ้ามี) — คงแถวที่ระบบเพิ่มเอง / พื้นที่พิเศษ
+  if (FS.dpTable) {
+    const dp = await fsReadTable(FS.dpTable);
+    const parsed = fsDpFromRows(dp.rows, dp.headers);
+    if (parsed) {
+      FS.dp.table = FS.dpTable;
+      FS.dp.meta = dp.metas;
+      const fileDPs = new Set(parsed.map(r => normDP(r.dp)).filter(Boolean));
+      const keep = App.dpMaster.filter(r => (r.source === "auto" && r.status === DP_STATUS_NEW) && !fileDPs.has(normDP(r.dp)));
+      Object.values(FS.q).filter(q => q.ch === "dp" && q.op === "upsert" && q.id.startsWith("new|")).forEach(q => {
+        const r = { source:"user" };
+        DpFields.forEach(([k, label]) => { r[k] = q.item.cols[FS.dp.cols[k] || label] ?? ""; });
+        if (!fileDPs.has(normDP(r.dp))) keep.push(r);
+      });
+      App.dpMaster = [...parsed, ...keep];
+    }
+  }
+  ensureSpecialAreas();
+  App.dpMaster.forEach(r => { r.key = dpRecordKey(r); });
+  rebuildDpIndex();
+  FS.dp.snap = new Map(App.dpMaster.filter(fsDpSyncable).map(r => [fsDpId(r), fsHash(fsDpCols(r))]));
+  FS.ready = true;
+}
+
+// หลังวาดข้อมูลแล้ว: แสดงสถานะ แล้วส่งคิวที่ค้าง
+function fsAfterLoad() {
+  fsRenderSyncStrip();
+  if (Object.keys(FS.q).length) fsFlushQueue();
+}
+
+/* ---------- เลือกตาราง ---------- */
+async function fsPickTables() {
+  const metas = await FS.bitable.base.getTableMetaList();
+  const info = [];
+  for (const m of metas) {
+    try {
+      const t = await FS.bitable.base.getTableById(m.id);
+      const names = (await t.getFieldMetaList()).map(f => f.name);
+      info.push({ ...m, names });
+    } catch (_) { info.push({ ...m, names:[] }); }
+  }
+  const has = (t, cols) => cols.every(c => t.names.includes(c));
+  let saved = "";
+  try { saved = localStorage.getItem(FS_TABLE_KEY) || ""; } catch (_) {}
+  const shared = new Set([...FS_CHANNELS.map(c => c.table), "DP Master"]);
+  const isActionPlan = t => /action\s*plan/i.test(t.name) || (t.names.includes("Action ID") && t.names.includes("รายละเอียด"));
+  const isAction = t => isActionPlan(t) || (shared.has(t.name) && t.names.includes(KEYCOL));
+  let main = info.find(t => t.id === saved && !isAction(t)) ||
+    info.find(t => !isAction(t) && has(t, [App.columns.name, App.columns.customerType])) ||
+    info.find(t => !isAction(t) && t.names.includes(App.columns.name));
+  if (!main) {
+    const active = await FS.bitable.base.getActiveTable();
+    main = info.find(t => t.id === active.id) || info[0];
+  }
+  const dp = info.find(t => t !== main && /dp|master|shop/i.test(t.name) && t.names.some(n => /^(DP Code|DP|รหัสสาขา)/i.test(n)) && t.names.includes("จังหวัด"));
+  const action = info.find(t => t !== main && isActionPlan(t));
+  return { info:info.filter(t => !isAction(t)), main, dp, action };
+}
+
+function fsRenderPicker(info, mainId) {
+  let box = $("fsTablePick");
+  if (!box) {
+    box = document.createElement("span");
+    box.id = "fsTablePick";
+    box.style.cssText = "display:inline-flex;gap:6px;align-items:center;margin-left:8px";
+    $("dataStatus").parentElement.insertBefore(box, $("dataStatus"));
+  }
+  box.innerHTML = `<select id="fsTableSelect" class="lang-select" style="min-height:28px;font-weight:400" title="ตารางข้อมูลเข้าพบใน Feishu Base">
+      ${info.map(t => `<option value="${escapeHTML(t.id)}" ${t.id === mainId ? "selected" : ""}>${escapeHTML(t.name)}</option>`).join("")}
+    </select>
+    <button class="btn btn-sm" id="fsReload" type="button" title="โหลดข้อมูลจาก Feishu ใหม่">🔄 โหลดใหม่</button>`;
+  $("fsTableSelect").onchange = () => {
+    try { localStorage.setItem(FS_TABLE_KEY, $("fsTableSelect").value); } catch (_) {}
+    FS.first = true;
+    fsConnect();
+  };
+  $("fsReload").onclick = () => fsLoad({ manual:true });
+}
+
+/* ---------- โหลดข้อมูล ---------- */
+async function fsLoad({ manual = false } = {}) {
+  if (!FS.table || FS.loading) return;
+  // กำลังแก้ไข / เปิดหน้าต่างอยู่ → รอรอบถัดไป ไม่วาดหน้าจอทับงานที่ทำค้าง
+  if (!manual && !FS.first && Layers.some(isLayerOpen)) { fsSchedule(4000); return; }
+  FS.loading = true;
+  try {
+    fsStatus(`กำลังอ่านข้อมูลจาก Feishu · ${FS.tableName} ...`, "orange", "กำลังซิงก์");
+    const { rows, metas } = await fsReadTable(FS.table);
+    rows.forEach(row => { if (!isFilled(row[App.columns.id])) row[App.columns.id] = row.__baseRecordId; });
+    await fsLoadShared(rows, metas, { manual });
+
+    let actionRows = [];
+    if (FS.actionTable) {
+      try { actionRows = (await fsReadTable(FS.actionTable)).rows; } catch (e) { console.warn("Action Plan table", e); }
+    }
+
+    const name = `Feishu · ${FS.tableName}`;
+    if (FS.first) resetData(name);
+    ingestRows(rows, { fileName:name, sheetName:FS.tableName, refresh:!FS.first, baseActions:fsActionsFromBase(actionRows, rows) });
+
+    const now = new Date();
+    const at = `${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`;
+    $("fileStatus").textContent =
+      `🟢 Feishu · ${FS.tableName} · ${formatNumber(App.rawRows.length)} รายการ · ${formatNumber(App.uniqueRows.length)} ลูกค้าใช้งานได้ · รอแก้ไข ${formatNumber(App.pendingRows.length)} · อัปเดต ${at}`;
+    $("dataStatus").className = "badge badge-green";
+    $("dataStatus").textContent = "Real-time";
+    $("dataStatus").title = "เชื่อม Feishu Base · อัปเดตอัตโนมัติเมื่อมีการเพิ่ม/แก้/ลบแถว · Action Plan บันทึกกลับเข้า Base";
+    if (FS.first) {
+      logEvent("upload", `เชื่อม Feishu Base · ตาราง ${FS.tableName} · ${App.rawRows.length} รายการ`);
+      showToast(`เชื่อม Feishu แล้ว · ${formatNumber(App.uniqueRows.length)} ลูกค้า`);
+    } else if (manual) {
+      showToast("โหลดข้อมูลจาก Feishu ใหม่แล้ว");
+    }
+    FS.first = false;
+    fsRenderActionBar();
+    fsAfterLoad();
+    fsFlush();   // ส่งรายการที่ค้าง (เช่น เน็ตหลุด / เพิ่งได้สิทธิ์)
+  } catch (error) {
+    console.error(error);
+    fsStatus(`อ่านข้อมูลจาก Feishu ไม่ได้: ${error.message || error}`, "red", "เกิดข้อผิดพลาด");
+  } finally {
+    FS.loading = false;
+  }
+}
+
+function fsSchedule(ms = 1500) {
+  clearTimeout(FS.timer);
+  FS.timer = setTimeout(() => fsLoad(), ms);   // รวมการแก้ติดกันหลายแถวเป็นรอบเดียว
+}
+
+async function fsConnect() {
+  FS.unsub.forEach(off => { try { off(); } catch (_) {} });
+  FS.unsub = [];
+  FS.ensured = false;
+  FS.tables = {};
+  FS.subscribed = new Set();
+  FS.ready = false;
+  FS.dp = { table:null, meta:[], snap:new Map(), cols:{} };
+  const { info, main, dp, action } = await fsPickTables();
+  if (!main) throw new Error("ไม่พบตารางใน Base นี้");
+  FS.table = await FS.bitable.base.getTableById(main.id);
+  FS.tableId = main.id;
+  FS.tableName = main.name;
+  FS.dpTable = dp ? await FS.bitable.base.getTableById(dp.id) : null;
+  FS.actionTable = action ? await FS.bitable.base.getTableById(action.id) : null;
+  FS.actionTableName = action?.name || "";
+  FS.actionMeta = FS.actionTable ? await FS.actionTable.getFieldMetaList() : [];
+  fsRenderPicker(info, main.id);
+  [FS.table, FS.dpTable, FS.actionTable].filter(Boolean).forEach(fsSubscribe);
+  await fsLoad();
+}
+
+async function fsInit() {
+  fsStatus("กำลังเชื่อมต่อ Feishu Base ...", "orange", "กำลังเชื่อม");
+  try {
+    const sdk = await fsTimeout(import(FS_SDK_URL), 15000, "โหลด Feishu SDK ไม่สำเร็จ (ตรวจอินเทอร์เน็ต)");
+    FS.bitable = sdk.bitable || sdk.default?.bitable;
+    if (!FS.bitable) throw new Error("ไม่พบ bitable ใน SDK");
+    await fsTimeout(FS.bitable.base.getTableMetaList(), 8000, "หน้านี้ไม่ได้เปิดเป็น Plugin ใน Feishu Base");
+
+    App.fsMode = true;
+    fsLoadPending();
+    fsLoadQueue();
+    fsHookStore();
+    fsGuardButtons();
+    // โหมด Feishu: ข้อมูลมาจาก Base อย่างเดียว
+    document.querySelector(".upload-banner h3").textContent = "เชื่อมต่อ Feishu Base · Real-time";
+    document.querySelector(".upload-banner p").textContent =
+      "อ่านข้อมูลจากตารางใน Base นี้โดยตรง · เพิ่ม / แก้ / ลบแถวใน Feishu แล้ว Dashboard อัปเดตเองภายในไม่กี่วินาที · การแก้ไขข้อมูล · Action Plan · Audit Call · ข้อมูลซ้ำ · ฐาน DP · Log บันทึกลง Base ให้ทุกคนเห็นตรงกัน · เห็นเฉพาะข้อมูลที่บัญชีคุณมีสิทธิ์";
+    $("uploadButton").style.display = "none";
+    await fsConnect();
+    if (FS.dpTable) $("dpUploadButton").style.display = "none";
+  } catch (error) {
+    console.warn(error);
+    App.fsMode = false;
+    fsStatus(`${error.message || error} · ใช้การอัปโหลด XLSX ได้ตามปกติ`, "gray", "รอข้อมูล");
+  }
+}
+
+// ให้ทดสอบ / เรียกจากภายนอกได้
+window.R04Feishu = { FS, fsInit, fsConnect, fsLoad, fsFlush, fsFlushQueue, fsCreateActionTable, fsActionsFromBase };
+
 </script>
 
 </body>
