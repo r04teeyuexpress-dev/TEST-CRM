@@ -1259,7 +1259,7 @@ body.compact .upload-banner{grid-template-columns:1fr;padding:12px 14px;gap:8px}
 body.compact .panel{padding:12px;margin-bottom:10px;border-radius:12px}
 body.compact .dashboard-grid,body.compact .dashboard-grid.one{grid-template-columns:1fr!important;gap:10px}
 body.compact .kpi-grid,body.compact #page-overview .kpi-grid,body.compact .department-grid,body.compact .filter-grid,body.compact .detail-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px}
-body.compact .podium{grid-template-columns:repeat(5,minmax(110px,1fr));overflow-x:auto;padding-bottom:4px}
+body.compact .podium{grid-template-columns:repeat(5,minmax(150px,1fr));overflow-x:auto;padding-bottom:4px}
 body.compact .table-wrap{overflow:auto;-webkit-overflow-scrolling:touch}
 body.compact .panel-title-row{gap:8px}
 body.compact .ap-form{grid-template-columns:1fr}
@@ -1286,6 +1286,14 @@ body.compact #topMore{display:inline-flex}
 body.compact:not(.top-open) .top-actions > :not(#filterToggleTop):not(#expWrap):not(#topMore){display:none!important}
 body.compact .top-actions{width:auto;margin-left:auto;justify-content:flex-end}
 body.compact.top-open .top-actions{width:100%}
+/* หน้าจอกลาง (ไม่ใช่โหมดกะทัดรัด): แถบบนตัดบรรทัดได้ ไม่ล้นจอ */
+@media (max-width:1320px){
+  body:not(.compact) .topbar{height:auto;min-height:78px;padding-top:10px;padding-bottom:10px;flex-wrap:wrap}
+  body:not(.compact) .top-actions{flex-wrap:wrap;justify-content:flex-end;margin-left:auto}
+}
+/* ตารางในโหมดกะทัดรัด: ไม่บีบคอลัมน์จนชื่อขาดเป็นตัว ๆ — เลื่อนซ้าย-ขวาในกรอบแทน */
+body.compact .table-wrap table{width:max-content;min-width:100%}
+body.compact .table-wrap td,body.compact .table-wrap th{min-width:5.5em;max-width:260px;word-break:normal}
 </style>
 </head>
 
@@ -4447,16 +4455,25 @@ const dataLabelPlugin = {
             horizontal ? (element.x + element.base) / 2 : element.x,
             horizontal ? element.y : (element.y + element.base) / 2);
         } else if (horizontal) {
+          // พื้นที่ขวาของแท่งไม่พอ → แสดงเฉพาะจำนวน · ไม่พอเลย → ไม่แสดง (ดูได้จาก tooltip)
+          const room = chart.chartArea.right - element.x - 5;
+          const text = ctx.measureText(full).width <= room ? full : formatNumber(value);
+          if (ctx.measureText(text).width > room + 30) return;
           ctx.fillStyle = labelColor;
           ctx.textAlign = "left";
           ctx.textBaseline = "middle";
-          ctx.fillText(full, element.x + 5, element.y);
+          ctx.fillText(text, element.x + 5, element.y);
         } else {
+          // แท่งแคบ (หลายชุดข้อมูล / หน้าต่างแคบ) → แสดงเฉพาะจำนวน · แคบมาก → ไม่แสดง
+          const barW = Math.max(element.width || 0, 1);
+          const slot = barW + 6;
+          const text = ctx.measureText(full).width <= slot * 1.15 ? full : formatNumber(value);
+          if (ctx.measureText(text).width > slot * 1.9) return;
           const pos = element.tooltipPosition();
           ctx.fillStyle = labelColor;
           ctx.textAlign = "center";
           ctx.textBaseline = "alphabetic";
-          ctx.fillText(full, pos.x, pos.y - 6);
+          ctx.fillText(text, pos.x, pos.y - 6);
         }
       });
     });
