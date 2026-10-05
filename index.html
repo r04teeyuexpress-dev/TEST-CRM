@@ -1240,6 +1240,52 @@ body.night-mode .info-banner{background:rgba(247,144,9,.12);border-color:rgba(24
 body.night-mode .detail-item.req{background:rgba(240,68,56,.12);border-color:rgba(240,68,56,.55)}
 body.night-mode .detail-item .edit-input{background:var(--panel2);color:var(--text);border-color:#3A4A63}
 body.night-mode .chip-row button{color:#E2E8F0;border-color:#3A4A63}
+
+/* ---------- โหมดกะทัดรัด (หน้าต่างแคบ / แผงส่วนขยายใน Feishu) ---------- */
+#compactToggle{min-width:auto;white-space:nowrap}
+body.compact .sidebar{left:calc(var(--sidebar-width) * -1)}
+body.compact .sidebar.open{left:0}
+body.compact .main{margin-left:0}
+body.compact .mobile-menu{display:inline-flex}
+body.compact .topbar{height:auto;min-height:56px;padding:8px 12px;flex-wrap:wrap;gap:8px}
+body.compact .page-heading h2{font-size:calc(16px * var(--fs))}
+body.compact .page-heading p{display:none}
+body.compact .top-actions{flex-wrap:wrap;gap:6px;width:100%}
+body.compact .top-actions .btn,body.compact .top-actions select,body.compact .top-actions input{min-height:32px;padding:5px 9px;font-size:calc(12px * var(--fs))}
+body.compact .top-actions .user-name{flex:1 1 120px;min-width:0;width:auto}
+body.compact .theme-toggle{min-width:auto}
+body.compact .content{padding:12px 10px 28px}
+body.compact .upload-banner{grid-template-columns:1fr;padding:12px 14px;gap:8px}
+body.compact .panel{padding:12px;margin-bottom:10px;border-radius:12px}
+body.compact .dashboard-grid,body.compact .dashboard-grid.one{grid-template-columns:1fr!important;gap:10px}
+body.compact .kpi-grid,body.compact #page-overview .kpi-grid,body.compact .department-grid,body.compact .filter-grid,body.compact .detail-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px}
+body.compact .podium{grid-template-columns:repeat(5,minmax(110px,1fr));overflow-x:auto;padding-bottom:4px}
+body.compact .table-wrap{overflow:auto;-webkit-overflow-scrolling:touch}
+body.compact .panel-title-row{gap:8px}
+body.compact .ap-form{grid-template-columns:1fr}
+body.compact .drawer{width:100vw!important;max-width:100vw}
+body.compact .modal{width:96vw!important;max-width:96vw}
+@media (max-width:360px){
+  body.compact .kpi-grid,body.compact #page-overview .kpi-grid,body.compact .department-grid,body.compact .filter-grid{grid-template-columns:1fr!important}
+}
+/* หัวข้อพับได้ */
+body.compact .panel.cp > .cp-head{cursor:pointer;user-select:none}
+body.compact .panel.cp .cp-head .panel-title::before,body.compact .panel.cp .panel-title.cp-head::before{content:"▾ ";color:var(--primary)}
+body.compact .panel.cp.cp-closed .cp-head .panel-title::before,body.compact .panel.cp.cp-closed .panel-title.cp-head::before{content:"▸ "}
+body.compact .panel.cp.cp-closed{padding-top:10px;padding-bottom:10px}
+body.compact .panel.cp.cp-closed > :not(.cp-head){display:none!important}
+body.compact .panel.cp.cp-closed .cp-head .panel-subtitle{display:none}
+body.compact .panel.cp.cp-closed .cp-head [data-expand]{display:none}
+@media print{body.compact .panel.cp.cp-closed > :not(.cp-head){display:revert!important}}
+/* ปุ่มโหลดใหม่มีข้อมูลใหม่รออยู่ */
+#fsReload.has-new{border-color:var(--orange);background:#FFF4E5;color:#B54708}
+body.night-mode #fsReload.has-new{background:#3a2a10;color:#FEC84B}
+/* แถบบนแบบย่อ: เหลือ ตัวกรอง · ⋯ · Export — ปุ่มอื่นอยู่ใต้ ⋯ */
+#topMore{display:none}
+body.compact #topMore{display:inline-flex}
+body.compact:not(.top-open) .top-actions > :not(#filterToggleTop):not(#expWrap):not(#topMore){display:none!important}
+body.compact .top-actions{width:auto;margin-left:auto;justify-content:flex-end}
+body.compact.top-open .top-actions{width:100%}
 </style>
 </head>
 
@@ -1337,6 +1383,7 @@ body.night-mode .chip-row button{color:#E2E8F0;border-color:#3A4A63}
       <select class="lang-select" id="langSelect" title="ภาษา / Language / 语言">
         <option value="th">ไทย</option><option value="en">EN</option><option value="zh">中文</option>
       </select>
+      <button class="btn" id="compactToggle" type="button">▣ อัตโนมัติ</button>
       <button class="btn theme-toggle" id="themeToggle" type="button">🌙 โหมดกลางคืน</button>
       <div class="exp-wrap" id="expWrap">
         <button class="btn btn-primary" id="exportMenuBtn" type="button">Export ▾</button>
@@ -13944,6 +13991,16 @@ const BASE_VOCAB_ROWS = [
 ["ป้าย", "อ่านข้อมูลจาก Feishu ไม่ได้: {*}", "Cannot read data from Feishu: {*}", "无法读取飞书数据：{*}"],
 ["ป้าย", "{*} · ใช้การอัปโหลด XLSX ได้ตามปกติ", "{*} · XLSX upload still works as usual", "{*} · 仍可照常上传 XLSX"],
 ["ป้าย", "หน้านี้ไม่ได้เปิดเป็น Plugin ใน Feishu Base", "This page is not open as a plugin in Feishu Base", "本页面未作为飞书多维表格插件打开"],
+["ป้าย", "อ่านข้อมูลจากตารางใน Base นี้โดยตรง · หน้าจอไม่รีเฟรชเองระหว่างดูงาน — มีข้อมูลใหม่ปุ่ม 🔄 โหลดใหม่ จะเปลี่ยนสี กดเมื่อพร้อม · การแก้ไขข้อมูล · Action Plan · Audit Call · ข้อมูลซ้ำ · ฐาน DP · Log ที่บันทึกในนี้ส่งเข้า Base ทันที · เห็นเฉพาะข้อมูลที่บัญชีคุณมีสิทธิ์", "Reads this Base's tables directly · the screen does not refresh by itself while you work — when there is new data the 🔄 Reload button changes colour; press it when ready · Data edits · Action Plan · Audit Call · Duplicates · DP master · Log saved here go to the Base immediately · you only see data your account can access", "直接读取本多维表格中的数据 · 查看时页面不会自动刷新 — 有新数据时「🔄 重新加载」按钮会变色，准备好后再点击 · 在此保存的数据修改 · 行动计划 · Audit Call · 重复数据 · DP 主数据 · 日志会立即写入多维表格 · 仅显示您账号有权限的数据"],
+["ปุ่ม", "🔄 โหลดใหม่ · มีข้อมูลใหม่", "🔄 Reload · new data", "🔄 重新加载 · 有新数据"],
+["ป้าย", "มีการเปลี่ยนแปลงใน Feishu หลังจากโหลดล่าสุด — กดเพื่อดึงข้อมูลล่าสุด", "Feishu has changed since the last load — press to fetch the latest data", "上次加载后飞书有变更 — 点击获取最新数据"],
+["ป้าย", "Feishu", "Feishu", "飞书"],
+["ป้าย", "เชื่อม Feishu Base · กด 🔄 โหลดใหม่ เพื่อดึงข้อมูลล่าสุด (หน้าจอไม่รีเฟรชเองระหว่างดูงาน) · สิ่งที่บันทึกในนี้ส่งเข้า Base ทันที", "Connected to Feishu Base · press 🔄 Reload to fetch the latest data (the screen does not refresh by itself) · what you save here goes to the Base immediately", "已连接飞书多维表格 · 点击「🔄 重新加载」获取最新数据（页面不会自动刷新）· 在此保存的内容会立即写入多维表格"],
+["ป้าย", "เมนูเพิ่มเติม (ภาษา · บทบาท · ตัวอักษร · โหมดกลางคืน · การแสดงผล)", "More (language · role · font size · night mode · layout)", "更多（语言 · 角色 · 字号 · 夜间模式 · 显示方式）"],
+["ปุ่ม", "▣ อัตโนมัติ", "▣ Auto", "▣ 自动"],
+["ปุ่ม", "▣ กะทัดรัด", "▣ Compact", "▣ 紧凑"],
+["ปุ่ม", "▢ เต็มจอ", "▢ Full", "▢ 完整"],
+["ป้าย", "การแสดงผล: อัตโนมัติ (ปรับตามความกว้างหน้าต่าง) → กะทัดรัด → เต็มจอ", "Layout: Auto (fits the window width) → Compact → Full", "显示方式：自动（按窗口宽度调整）→ 紧凑 → 完整"],
 ["ป้าย", "ข้อมูลกลางซิงก์กับ Feishu แล้ว", "Shared data synced with Feishu", "共享数据已与飞书同步"],
 ["ป้าย", "เชื่อมแล้ว", "Connected", "已连接"],
 ["ป้าย", "จะสร้างตารางให้อัตโนมัติเมื่อมีข้อมูลแรก", "The table is created automatically with the first record", "首条数据写入时自动创建表格"],
@@ -15162,6 +15219,99 @@ translateTree(document.body);
 liveInit();
 </script>
 
+<script>
+/* ---------- โหมดกะทัดรัด (หน้าต่างแคบ เช่น แผงส่วนขยายใน Feishu) ----------
+   อัตโนมัติเมื่อหน้าต่างแคบกว่า 900px · ปุ่ม ▣ สลับ อัตโนมัติ → เปิด → ปิด (จำไว้ในเครื่อง)
+   ในโหมดนี้: เมนูซ้ายยุบเป็นปุ่ม ☰ · การ์ดตัวเลข 2 ช่อง · กราฟเรียงทีละอัน · ตารางเลื่อนในกรอบ
+   ทุกหัวข้อ (กราฟ / ตาราง) พับเก็บได้ — กดที่ชื่อหัวข้อเพื่อเปิด / ปิด · หัวข้อแรกของหน้าเปิดไว้ */
+const COMPACT_KEY = "r04-dashboard-compact";
+const COMPACT_WIDTH = 900;
+App.compactPref = "auto";
+try { App.compactPref = ["auto", "on", "off"].includes(localStorage.getItem(COMPACT_KEY)) ? localStorage.getItem(COMPACT_KEY) : "auto"; } catch (_) {}
+App.panelOpen = {};   // หน้า → { ลำดับหัวข้อ: true/false }
+
+function isCompact() {
+  return App.compactPref === "on" || (App.compactPref === "auto" && window.innerWidth < COMPACT_WIDTH);
+}
+
+function applyCompact() {
+  const on = isCompact();
+  const changed = document.body.classList.contains("compact") !== on;
+  document.body.classList.toggle("compact", on);
+  // เข้าโหมดกะทัดรัด → พับตัวกรองเก็บ (ปุ่มเวลาด่วนยังเห็น · กด "ตัวกรอง" เพื่อเปิด)
+  if (changed && on && $("filterBody") && !$("filterBody").classList.contains("hidden")) {
+    $("filterBody").classList.add("hidden");
+    $("filterChevron").textContent = "⌄";
+  }
+  const btn = $("compactToggle");
+  if (btn) {
+    btn.textContent = { auto:"▣ อัตโนมัติ", on:"▣ กะทัดรัด", off:"▢ เต็มจอ" }[App.compactPref];
+    btn.title = "การแสดงผล: อัตโนมัติ (ปรับตามความกว้างหน้าต่าง) → กะทัดรัด → เต็มจอ";
+    if (typeof translateTree === "function") translateTree(btn);
+  }
+  setupCollapsible();
+  if (changed) setTimeout(() => Object.values(App.charts || {}).forEach(c => { try { c.resize(); } catch (_) {} }), 60);
+}
+
+// หัวข้อพับได้: ทุก .panel ในหน้า ที่มีชื่อหัวข้อ
+function setupCollapsible() {
+  const page = document.querySelector(".page.active");
+  if (!page) return;
+  const pageId = page.id;
+  const state = App.panelOpen[pageId] ||= {};
+  const panels = [...page.querySelectorAll(".panel")].filter(p => p.querySelector(".panel-title") && !p.closest(".panel .panel"));
+  panels.forEach((panel, i) => {
+    const title = panel.querySelector(".panel-title");
+    const head = [...panel.children].find(ch => ch.contains(title));
+    if (!head) return;
+    [...panel.children].forEach(ch => ch.classList.toggle("cp-head", ch === head));
+    panel.classList.add("cp");
+    if (!(i in state)) state[i] = i === 0;
+    panel.classList.toggle("cp-closed", !state[i]);
+    if (!head.dataset.cpBound) {
+      head.dataset.cpBound = "1";
+      head.addEventListener("click", event => {
+        if (!document.body.classList.contains("compact")) return;
+        if (event.target.closest("button,select,input,a,label,textarea,[data-expand]")) return;
+        const idx = [...page.querySelectorAll(".panel.cp")].indexOf(panel);
+        const open = panel.classList.contains("cp-closed");
+        panel.classList.toggle("cp-closed", !open);
+        (App.panelOpen[pageId] ||= {})[idx] = open;
+        if (open) setTimeout(() => panel.querySelectorAll("canvas").forEach(cv => {
+          const chart = Object.values(App.charts || {}).find(c => c?.canvas === cv);
+          try { chart?.resize(); } catch (_) {}
+        }), 30);
+      });
+    }
+  });
+}
+
+// ปุ่ม ⋯ แสดง / ซ่อนปุ่มอื่นบนแถบบน (เฉพาะโหมดกะทัดรัด)
+(() => {
+  const more = document.createElement("button");
+  more.className = "btn"; more.id = "topMore"; more.type = "button"; more.textContent = "⋯";
+  more.title = "เมนูเพิ่มเติม (ภาษา · บทบาท · ตัวอักษร · โหมดกลางคืน · การแสดงผล)";
+  $("filterToggleTop").after(more);
+  more.onclick = () => document.body.classList.toggle("top-open");
+})();
+
+$("compactToggle").onclick = () => {
+  App.compactPref = { auto:"on", on:"off", off:"auto" }[App.compactPref];
+  try { localStorage.setItem(COMPACT_KEY, App.compactPref); } catch (_) {}
+  applyCompact();
+};
+window.addEventListener("resize", () => { clearTimeout(App.compactTimer); App.compactTimer = setTimeout(applyCompact, 120); });
+
+// เปิดหน้าใหม่ / วาดใหม่ → ตั้งหัวข้อพับได้ของหน้านั้น
+const _openPageCompact = openPage;
+openPage = function (page) { const r = _openPageCompact.apply(this, arguments); setupCollapsible(); return r; };
+const _renderAllCompact = renderAll;
+renderAll = function () { const r = _renderAllCompact.apply(this, arguments); setupCollapsible(); return r; };
+
+applyCompact();
+
+</script>
+
 <script type="module">
 /* =========================================================
    Feishu / Lark Base connector — อ่านแบบ Real-time + บันทึก Action Plan กลับเข้า Base
@@ -15423,6 +15573,7 @@ async function fsPushOne(id) {
   const p = FS.pending[id];
   if (!p || !FS.actionTable) return;
   await fsEnsureActionFields();
+  fsWrote();
   const recordId = FS.actionRec.get(id);
   if (p.op === "delete") {
     if (recordId) await FS.actionTable.deleteRecord(recordId);
@@ -15432,6 +15583,7 @@ async function fsPushOne(id) {
     if (recordId) await FS.actionTable.setRecord(recordId, { fields });
     else FS.actionRec.set(id, await FS.actionTable.addRecord({ fields }));
   }
+  fsWrote();
   if (FS.pending[id] === p) delete FS.pending[id];   // ถ้าระหว่างส่งมีการแก้ใหม่ เก็บรายการใหม่ไว้ส่งรอบถัดไป
   fsSavePending();
 }
@@ -15475,6 +15627,7 @@ async function fsCreateActionTable() {
   if (!FS.bitable || !FS.tableId) return;
   try {
     const fields = FS_ACTION_FIELDS.map(fsFieldConfig);
+    fsWrote();
     await FS.bitable.base.addTable({ name:FS_ACTION_TABLE_NAME, fields });
     logEvent("action", `สร้างตาราง ${FS_ACTION_TABLE_NAME} ใน Feishu Base`);
     showToast("สร้างตาราง Action Plan ใน Feishu แล้ว");
@@ -15670,7 +15823,7 @@ function fsSubscribe(table) {
   if (FS.subscribed.has(table)) return;
   FS.subscribed.add(table);
   ["onRecordAdd", "onRecordModify", "onRecordDelete"].forEach(ev => {
-    try { const off = table[ev]?.(() => fsSchedule()); if (typeof off === "function") FS.unsub.push(off); } catch (_) {}
+    try { const off = table[ev]?.(() => fsNotifyChange()); if (typeof off === "function") FS.unsub.push(off); } catch (_) {}
   });
 }
 
@@ -15798,6 +15951,7 @@ function fsDiff(storeKey) {
 async function fsPushQueued(qk) {
   const q = FS.q[qk];
   if (!q) return;
+  fsWrote();
   if (q.ch === "dp") {
     let entry = FS.dp.table ? FS.dp : null;
     if (!entry) {
@@ -15830,6 +15984,7 @@ async function fsPushQueued(qk) {
       else st.rec.set(q.id, await entry.table.addRecord({ fields }));
     }
   }
+  fsWrote();
   if (FS.q[qk] === q) delete FS.q[qk];
   fsSaveQueue();
 }
@@ -16004,6 +16159,7 @@ function fsRenderPicker(info, mainId) {
       ${info.map(t => `<option value="${escapeHTML(t.id)}" ${t.id === mainId ? "selected" : ""}>${escapeHTML(t.name)}</option>`).join("")}
     </select>
     <button class="btn btn-sm" id="fsReload" type="button" title="โหลดข้อมูลจาก Feishu ใหม่">🔄 โหลดใหม่</button>`;
+  fsMarkReload();
   $("fsTableSelect").onchange = () => {
     try { localStorage.setItem(FS_TABLE_KEY, $("fsTableSelect").value); } catch (_) {}
     FS.first = true;
@@ -16038,8 +16194,8 @@ async function fsLoad({ manual = false } = {}) {
     $("fileStatus").textContent =
       `🟢 Feishu · ${FS.tableName} · ${formatNumber(App.rawRows.length)} รายการ · ${formatNumber(App.uniqueRows.length)} ลูกค้าใช้งานได้ · รอแก้ไข ${formatNumber(App.pendingRows.length)} · อัปเดต ${at}`;
     $("dataStatus").className = "badge badge-green";
-    $("dataStatus").textContent = "Real-time";
-    $("dataStatus").title = "เชื่อม Feishu Base · อัปเดตอัตโนมัติเมื่อมีการเพิ่ม/แก้/ลบแถว · Action Plan บันทึกกลับเข้า Base";
+    $("dataStatus").textContent = "Feishu";
+    $("dataStatus").title = "เชื่อม Feishu Base · กด 🔄 โหลดใหม่ เพื่อดึงข้อมูลล่าสุด (หน้าจอไม่รีเฟรชเองระหว่างดูงาน) · สิ่งที่บันทึกในนี้ส่งเข้า Base ทันที";
     if (FS.first) {
       logEvent("upload", `เชื่อม Feishu Base · ตาราง ${FS.tableName} · ${App.rawRows.length} รายการ`);
       showToast(`เชื่อม Feishu แล้ว · ${formatNumber(App.uniqueRows.length)} ลูกค้า`);
@@ -16047,6 +16203,8 @@ async function fsLoad({ manual = false } = {}) {
       showToast("โหลดข้อมูลจาก Feishu ใหม่แล้ว");
     }
     FS.first = false;
+    FS.newCount = 0;
+    fsMarkReload();
     fsRenderActionBar();
     fsAfterLoad();
     fsFlush();   // ส่งรายการที่ค้าง (เช่น เน็ตหลุด / เพิ่งได้สิทธิ์)
@@ -16057,6 +16215,23 @@ async function fsLoad({ manual = false } = {}) {
     FS.loading = false;
   }
 }
+
+// มีคนแก้ข้อมูลใน Feishu → ไม่วาดหน้าจอใหม่เอง (ไม่กวนคนที่กำลังดูงาน) แค่ไฮไลต์ปุ่ม 🔄 โหลดใหม่
+// การเปลี่ยนแปลงที่มาจากการบันทึกของเครื่องนี้เอง (ภายใน 5 วินาที) ไม่นับ
+function fsNotifyChange() {
+  if (Date.now() - (FS.lastWriteAt || 0) < 5000) return;
+  FS.newCount = (FS.newCount || 0) + 1;
+  fsMarkReload();
+}
+function fsMarkReload() {
+  const b = $("fsReload");
+  if (!b) return;
+  b.classList.toggle("has-new", !!FS.newCount);
+  b.textContent = FS.newCount ? "🔄 โหลดใหม่ · มีข้อมูลใหม่" : "🔄 โหลดใหม่";
+  b.title = FS.newCount ? "มีการเปลี่ยนแปลงใน Feishu หลังจากโหลดล่าสุด — กดเพื่อดึงข้อมูลล่าสุด" : "โหลดข้อมูลจาก Feishu ใหม่";
+  if (typeof translateTree === "function") translateTree(b);
+}
+function fsWrote() { FS.lastWriteAt = Date.now(); }
 
 function fsSchedule(ms = 1500) {
   clearTimeout(FS.timer);
@@ -16101,7 +16276,7 @@ async function fsInit() {
     // โหมด Feishu: ข้อมูลมาจาก Base อย่างเดียว
     document.querySelector(".upload-banner h3").textContent = "เชื่อมต่อ Feishu Base · Real-time";
     document.querySelector(".upload-banner p").textContent =
-      "อ่านข้อมูลจากตารางใน Base นี้โดยตรง · เพิ่ม / แก้ / ลบแถวใน Feishu แล้ว Dashboard อัปเดตเองภายในไม่กี่วินาที · การแก้ไขข้อมูล · Action Plan · Audit Call · ข้อมูลซ้ำ · ฐาน DP · Log บันทึกลง Base ให้ทุกคนเห็นตรงกัน · เห็นเฉพาะข้อมูลที่บัญชีคุณมีสิทธิ์";
+      "อ่านข้อมูลจากตารางใน Base นี้โดยตรง · หน้าจอไม่รีเฟรชเองระหว่างดูงาน — มีข้อมูลใหม่ปุ่ม 🔄 โหลดใหม่ จะเปลี่ยนสี กดเมื่อพร้อม · การแก้ไขข้อมูล · Action Plan · Audit Call · ข้อมูลซ้ำ · ฐาน DP · Log ที่บันทึกในนี้ส่งเข้า Base ทันที · เห็นเฉพาะข้อมูลที่บัญชีคุณมีสิทธิ์";
     $("uploadButton").style.display = "none";
     await fsConnect();
     if (FS.dpTable) $("dpUploadButton").style.display = "none";
