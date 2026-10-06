@@ -2737,9 +2737,24 @@ const ProvinceAlias = {
   "กรุงเทพฯ": "กรุงเทพมหานคร"
 };
 
+Object.assign(ProvinceAlias, {
+  "ประจวบ": "ประจวบคีรีขันธ์", "ประจวบฯ": "ประจวบคีรีขันธ์", "ประจวบคีรีขันท์": "ประจวบคีรีขันธ์", "ประจวบฯคีรีขันธ์": "ประจวบคีรีขันธ์",
+  "สุพรรณ": "สุพรรณบุรี", "สุพรรณฯ": "สุพรรณบุรี", "กาญจน์": "กาญจนบุรี", "กาญจนฯ": "กาญจนบุรี", "กาญ": "กาญจนบุรี",
+  "อยุธยาฯ": "พระนครศรีอยุธยา", "กรุงศรีอยุธยา": "พระนครศรีอยุธยา", "นครศรีอยุธยา": "พระนครศรีอยุธยา", "ปทุม": "ปทุมธานี", "ปทุมฯ": "ปทุมธานี",
+  "เพชรฯ": "เพชรบุรี", "เพชร": "เพชรบุรี", "ราชบุรีฯ": "ราชบุรี", "แม่กลอง": "สมุทรสงคราม", "นนท์": "นนทบุรี", "นนทฯ": "นนทบุรี"
+});
+// ชื่อเต็มของจังหวัด R04 — ใช้แปลงชื่อย่อที่ลงท้าย "ฯ" (เช่น "ประจวบฯ") ที่ยังไม่มีในรายการด้านบน
+const R04ProvinceNames = ["ปทุมธานี", "นนทบุรี", "นครนายก", "พระนครศรีอยุธยา", "สระบุรี", "สุพรรณบุรี", "กาญจนบุรี", "นครปฐม", "ราชบุรี", "สมุทรสงคราม", "เพชรบุรี", "ประจวบคีรีขันธ์", "กรุงเทพมหานคร"];
+
 function normProvince(value) {
-  const t = String(value ?? "").trim().replace(/^(จ\.|จังหวัด)\s*/, "");
-  return ProvinceAlias[t] || t;
+  const t = String(value ?? "").trim().replace(/^(จ\.|จังหวัด)\s*/, "").replace(/\s+/g, "");
+  if (ProvinceAlias[t]) return ProvinceAlias[t];
+  if (/ฯ\.?$/.test(t)) {
+    const stem = t.replace(/ฯ\.?$/, "");
+    const hit = R04ProvinceNames.filter(p => stem.length >= 3 && p.startsWith(stem));
+    if (hit.length === 1) return hit[0];
+  }
+  return t;
 }
 
 function isFilled(value) {
@@ -2910,6 +2925,12 @@ function isPlaceholderPhone(phone) {
   return phoneStatus(phone) !== "ok";
 }
 
+// ชื่อที่ไม่ใช่ชื่อลูกค้าจริง ("ไม่มี" / "ไม่ทราบ" / N/A ฯลฯ) = ไม่มีชื่อ
+const PlaceholderNameRe = /^(ไม่มี|ไม่มีชื่อ|ไม่ทราบ|ไม่ทราบชื่อ|ไม่รู้|ไม่บอก|ไม่บอกชื่อ|ไม่ระบุ|ไม่ระบุชื่อ|ไม่แจ้ง|ไม่มีค่ะ|ไม่มีครับ|n\/?a|na|none|null|unknown|no name|nil|-+|\.+|x+|0+|无|没有)$/i;
+function isRealName(value) {
+  return isFilled(value) && !PlaceholderNameRe.test(String(value).trim());
+}
+
 // รายการที่มีปัญหาเหล่านี้ = "ข้อมูลไม่ถูกต้อง รอดำเนินการแก้ไข" (ยังไม่เข้า Dashboard)
 function rowIssues(row) {
   const issues = [];
@@ -2917,7 +2938,7 @@ function rowIssues(row) {
   if (status === "invalid") issues.push(`เบอร์โทรไม่ถูกต้อง (ตัวเลขซ้ำ ≥${PHONE_REPEAT_LIMIT} ตัว / จำนวนหลักผิด)`);
   if (status === "missing") issues.push("ไม่มีเบอร์โทร");
   if (status === "noinfo") issues.push("🚫 ลูกค้าไม่สะดวกให้ข้อมูล");
-  if (!isFilled(row[App.columns.name])) issues.push("ไม่มีชื่อลูกค้า");
+  if (!isRealName(row[App.columns.name])) issues.push("ไม่มีชื่อลูกค้า");
   if (!isFilled(row[App.columns.customerType])) issues.push("ไม่ระบุประเภทลูกค้า");
   return issues;
 }
@@ -3403,6 +3424,7 @@ function buildDuplicateModel() {
     row.__duplicateGroupId = "";
     row.__canonical = false;
     delete row.__groupRows;
+    delete row.__dupHold;
   });
   App.rawRows.forEach(row => { row.__false = isFalseRecord(row); row.__auditOk = isAuditOk(row); });
   App.excludedTestRows = App.rawRows.filter(isTestRemark);
@@ -3422,7 +3444,7 @@ function buildDuplicateModel() {
     if (row.__split) return;   // ผู้ใช้ตรวจแล้วว่าเป็นลูกค้าคนละราย → ไม่รวมกับใคร
 
     const phone = normalizePhone(row[App.columns.phone]);
-    const name = normalizeName(row[App.columns.name]);
+    const name = isRealName(row[App.columns.name]) ? normalizeName(row[App.columns.name]) : "";
 
     if (phone && !isPlaceholderPhone(phone)) {
       if (phoneOwner.has(phone)) uf.union(index, phoneOwner.get(phone));
@@ -3478,7 +3500,27 @@ function buildDuplicateModel() {
       });
     }
   });
+
+  // กลุ่ม "ควรตรวจสอบ" (ชื่อ / เบอร์ / DP ในกลุ่มไม่ตรงกัน) ที่ยังไม่ยืนยัน → ยังไม่นับใน Dashboard ทั้งกลุ่ม
+  // ไปค้างใน Audit "รอแก้ไข" · กด "ยืนยัน" (รายเดียวกัน) หรือ "แยก" (คนละราย) แล้วกลับเข้ามานับเอง
+  const held = new Set();
+  App.duplicateGroups.forEach(group => {
+    group.held = groupNeedsReview(group);
+    if (!group.held) return;
+    group.rows.forEach(row => {
+      held.add(row);
+      row.__dupHold = group.id;
+      row.__issues = [...row.__issues, DUP_HOLD_ISSUE];
+    });
+  });
+  if (held.size) {
+    App.uniqueRows = App.uniqueRows.filter(row => !held.has(row));
+    App.activeRawRows = App.activeRawRows.filter(row => !held.has(row));
+    App.pendingRows = [...App.pendingRows, ...held];
+  }
 }
+const DUP_HOLD_ISSUE = "ข้อมูลซ้ำรอตรวจสอบ (กดยืนยัน / แยก ที่หน้าข้อมูลซ้ำ)";
+const heldDuplicateGroups = () => App.duplicateGroups.filter(group => group.held);
 
 /* กลุ่มที่ "ควรตรวจสอบ" ก่อนเชื่อว่าเป็นลูกค้ารายเดียวกัน: ชื่อ / เบอร์ / DP ในกลุ่มไม่ตรงกัน
    (เบอร์เดียวกันแต่คนละร้าน · ชื่อเหมือนกันแต่คนละเบอร์) — ตรวจแล้วกด "ยืนยัน" หรือ "แยก" ได้ที่ปุ่มเปรียบเทียบ */
@@ -5335,6 +5377,7 @@ function renderAudit() {
     { title:"ข้อมูลซ้ำ", go:"duplicatePanel",
       detail:`${App.duplicateGroups.length} กลุ่ม รวม ${duplicateRawRows} รายการดิบ (จับจากเบอร์ที่ใช้งานได้ หรือชื่อซ้ำ)` +
         ` · ควรตรวจสอบ ${reviewGroups} กลุ่ม (ชื่อ / เบอร์ / DP ในกลุ่มไม่ตรงกัน)` +
+        (reviewGroups ? " · ยังไม่นับใน Dashboard จนกว่าจะกดยืนยัน / แยก" : "") +
         (splitRows ? ` · แยกเป็นลูกค้าคนละรายแล้ว ${splitRows} รายการ` : ""),
       value:App.duplicateGroups.length, type:reviewGroups ? "orange" : App.duplicateGroups.length ? "blue" : "green" },
     { title:"การแบ่งประเภทลูกค้าตามแผนก",
@@ -7414,6 +7457,7 @@ const R04Provinces = {
 };
 
 App.dpMaster = loadStore(DP_KEY) || [];
+App.dpMaster.forEach(r => { if (r && r.province) r.province = normProvince(r.province); });
 App.dpIndex = new Map();
 
 function normDP(value) {
@@ -14047,7 +14091,27 @@ const BASE_VOCAB_ROWS = [
 ["ป้าย", "จะสร้างตารางให้อัตโนมัติเมื่อมีข้อมูลแรก", "The table is created automatically with the first record", "首条数据写入时自动创建表格"],
 ["ป้าย", "ส่งข้อมูลเข้า Feishu แล้ว {#} รายการ", "Sent {#} records to Feishu", "已发送 {#} 条数据到飞书"],
 ["ป้าย", "อ่านข้อมูลจากตารางใน Base นี้โดยตรง · เพิ่ม / แก้ / ลบแถวใน Feishu แล้ว Dashboard อัปเดตเองภายในไม่กี่วินาที · การแก้ไขข้อมูล · Action Plan · Audit Call · ข้อมูลซ้ำ · ฐาน DP · Log บันทึกลง Base ให้ทุกคนเห็นตรงกัน · เห็นเฉพาะข้อมูลที่บัญชีคุณมีสิทธิ์", "Reads this Base's tables directly · add / edit / delete rows in Feishu and the dashboard updates within seconds · Data edits · Action Plan · Audit Call · Duplicates · DP master · Log are saved to the Base so everyone sees the same · you only see data your account can access", "直接读取本多维表格中的数据 · 在飞书中增 / 改 / 删行后，看板几秒内自动更新 · 数据修改 · 行动计划 · Audit Call · 重复数据 · DP 主数据 · 日志均保存到多维表格，所有人看到的一致 · 仅显示您账号有权限的数据"],
-["ป้าย", "ส่ง Action Plan ที่บันทึกไว้ในเครื่องนี้ {#} รายการ เข้าตาราง Action Plan ใน Feishu?", "Send {#} Action Plans saved on this device to the Action Plan table in Feishu?", "将本机保存的 {#} 条行动计划发送到飞书行动计划表？"]
+["ป้าย", "ส่ง Action Plan ที่บันทึกไว้ในเครื่องนี้ {#} รายการ เข้าตาราง Action Plan ใน Feishu?", "Send {#} Action Plans saved on this device to the Action Plan table in Feishu?", "将本机保存的 {#} 条行动计划发送到飞书行动计划表？"],
+/* ----- Feishu: บันทึกแบบตรวจผล (2026-10-06) ----- */
+["ป้าย", "🩺 ตรวจการบันทึก", "🩺 Check saving", "🩺 检查保存"],
+["ป้าย", "ทดสอบอ่าน / เขียนทุกตารางใน Base (เขียนค่าเดิมกลับ ข้อมูลไม่เปลี่ยน)", "Test read / write on every table in the Base (writes the same value back — no data changes)", "测试多维表格中所有表的读 / 写（写回原值，数据不变）"],
+["ป้าย", "⚠ ปัญหาการบันทึก ({#})", "⚠ Saving problems ({#})", "⚠ 保存问题（{#}）"],
+["ป้าย", "ปัญหาการบันทึกลง Feishu", "Problems saving to Feishu", "保存到飞书的问题"],
+["ป้าย", "ผลตรวจการเชื่อม Feishu", "Feishu connection check", "飞书连接检查结果"],
+["ปุ่ม", "คัดลอกผล", "Copy result", "复制结果"],
+["ปุ่ม", "ล้างรายการปัญหา", "Clear problems", "清除问题列表"],
+["ป้าย", "คัดลอกแล้ว — วางส่งให้ผู้ดูแลระบบได้", "Copied — paste it to your administrator", "已复制 — 可粘贴发送给管理员"],
+["ป้าย", "กำลังตรวจการเชื่อม Feishu ...", "Checking the Feishu connection ...", "正在检查飞书连接 ..."],
+["ป้าย", "✓ บันทึกลง Feishu แล้ว ({#} รายการ)", "✓ Saved to Feishu ({#} items)", "✓ 已保存到飞书（{#} 条）"],
+["ปุ่ม", "⏳ กำลังส่งที่ค้าง ...", "⏳ Sending pending ...", "⏳ 正在发送待保存数据 ..."],
+["ป้าย", "ไม่พบคอลัมน์นี้ในตาราง Feishu", "This column is not in the Feishu table", "飞书表中没有此字段"],
+["ป้าย", "🔒 ไม่พบคอลัมน์นี้ในตาราง Feishu", "🔒 This column is not in the Feishu table", "🔒 飞书表中没有此字段"],
+["ป้าย", "คอลัมน์ชนิด \"{*}\" แก้ได้ใน Feishu โดยตรงเท่านั้น", "\"{*}\" columns can only be edited directly in Feishu", "“{*}”类型字段只能在飞书中直接修改"],
+["ป้าย", "🔒 คอลัมน์ชนิด \"{*}\" แก้ได้ใน Feishu โดยตรงเท่านั้น", "🔒 \"{*}\" columns can only be edited directly in Feishu", "🔒 “{*}”类型字段只能在飞书中直接修改"],
+["ป้าย", "Feishu รับคำสั่งแต่ค่าในตารางไม่เปลี่ยน (ชนิดคอลัมน์ไม่รับค่านี้ / ไม่มีตัวเลือกนี้)", "Feishu accepted the write but the cell did not change (column type rejects this value / option missing)", "飞书接受了写入但单元格未变化（字段类型不接受此值 / 无此选项）"],
+/* ----- ข้อมูลซ้ำรอตรวจสอบ (2026-10-06) ----- */
+["ป้าย", "ข้อมูลซ้ำรอตรวจสอบ (กดยืนยัน / แยก ที่หน้าข้อมูลซ้ำ)", "Duplicate pending review (Confirm / Split on the Duplicates page)", "重复数据待核查（在重复数据页点击确认 / 拆分）"],
+["ป้าย", "ยังไม่นับใน Dashboard จนกว่าจะกดยืนยัน / แยก", "not counted in the dashboard until Confirmed / Split", "确认 / 拆分前不计入看板"]
 ];
 
 /* ---------- ภาษา 3 ภาษา + คลังคำศัพท์ (Vocabulary) ----------
@@ -14799,7 +14863,7 @@ const SummaryText = {
   bySide:       ["แบ่งเป็น 🏢 MKT / Network {a} ร้านค้า · 🏠 YOYI / HOME {b} ร้านค้า", "其中 🏢 MKT / Network {a} 家 · 🏠 YOYI / HOME {b} 家"],
   ctypeLine:    ["👥 ประเภทลูกค้า: {v}", "👥 客户类型：{v}"],
   peopleLine:   ["🏅 ผู้ลงพื้นที่ TOP 5: {v}", "🏅 外访人员 TOP 5：{v}"],
-  dataLine:     ["🧹 คุณภาพข้อมูล: รอแก้ไข {p} รายการ · ข้อมูลซ้ำ {d} กลุ่ม · ทดสอบระบบ {t} · Audit Call ผ่าน {ok} / ข้อมูลเท็จ {bad}", "🧹 数据质量：待修正 {p} 条 · 重复 {d} 组 · 系统测试 {t} · Audit Call 通过 {ok} / 虚假 {bad}"],
+  dataLine:     ["🧹 คุณภาพข้อมูล: รอแก้ไข {p} รายการ · ข้อมูลซ้ำ {d} กลุ่ม (รอตรวจสอบ ยังไม่นับ {h} กลุ่ม) · ทดสอบระบบ {t} · Audit Call ผ่าน {ok} / ข้อมูลเท็จ {bad}", "🧹 数据质量：待修正 {p} 条 · 重复 {d} 组（待核查、暂不计入 {h} 组） · 系统测试 {t} · Audit Call 通过 {ok} / 虚假 {bad}"],
   mktH:         ["🏢 ส่วนที่ 1 · MKT / Network (ลูกค้า Active Lead · New Lead · Lost)", "🏢 第一部分 · MKT / Network（Active Lead · New Lead · Lost 客户）"],
   mktCount:     ["เข้าพบ {n} ร้านค้า: {v}", "走访 {n} 家：{v}"],
   salesH:       ["🤝 ผลการเจรจา (Sales Progress):", "🤝 谈判与转化结果（Sales Progress）："],
@@ -14978,7 +15042,7 @@ function buildSummary(lang) {
   if (detail) {
     L.push(`* ${T("peopleLine", { v:personIndex(rows).slice(0, 5).map(p => `${p.name} ${p.list.length}`).join(" · ") || "-" })}`);
     const ac = auditCallStats();
-    L.push(`* ${T("dataLine", { p:App.pendingRows.length, d:App.duplicateGroups.length, t:App.excludedTestRows.length, ok:ac.ok, bad:ac.bad })}`);
+    L.push(`* ${T("dataLine", { p:App.pendingRows.length, d:App.duplicateGroups.length, h:heldDuplicateGroups().length, t:App.excludedTestRows.length, ok:ac.ok, bad:ac.bad })}`);
   }
 
   // ---------- MKT / Network
@@ -15448,7 +15512,7 @@ async function fsReadTable(table) {
   const rows = [];
   let pageToken;
   do {
-    const res = await table.getRecords({ pageSize:500, pageToken });
+    const res = await fsGetPage(table, pageToken);
     (res.records || []).forEach(record => {
       const row = {};
       ordered.forEach(m => {
@@ -15563,14 +15627,345 @@ async function fsCellValue(meta, value, customerRecordId, table = FS.actionTable
       return out;
     }
     case 13: return isFilled(value) ? String(value) : null;   // Phone
+    case 7: return /^(ใช่|yes|true|1|✓|✔|y|是)$/i.test(String(value ?? "").trim());   // Checkbox
+    case 15: return isFilled(value) ? [{ type:"url", text:String(value), link:String(value) }] : null;   // URL
+    case 99005: return isFilled(value) ? String(value) : null;   // Email
+    case 99001: return String(value ?? "").trim() ? [{ type:"text", text:String(value) }] : null;   // Barcode
+    case 99002: case 99003: case 99004: {   // ความคืบหน้า / สกุลเงิน / ให้คะแนน
+      if (!isFilled(value)) return null;
+      const n = Number(String(value).replace(/[,%฿$\s]/g, ""));
+      return Number.isFinite(n) ? n : undefined;
+    }
     case FT.SingleLink:
     case FT.DuplexLink: {
       const tableId = meta.property?.tableId || FS.tableId;
       if (!customerRecordId || tableId !== FS.tableId) return undefined;
-      return { recordIds:[customerRecordId], tableId, record_ids:[customerRecordId], table_id:tableId, text:"", type:"text" };
+      return { text:"", type:"text", recordIds:[customerRecordId], tableId };
     }
     default: return undefined;   // คอลัมน์ชนิดอื่น (สูตร / ผู้ใช้ ฯลฯ) ไม่เขียนทับ
   }
+}
+
+
+/* =========================================================
+   เขียนลง Base แบบทนทาน + ตรวจผลทุกครั้ง (2026-10-06)
+   ปัญหาเดิม: สั่งเขียนแล้ว Base ไม่รับ (บางชนิดคอลัมน์ / บางเวอร์ชันของ Feishu) แต่หน้าจอไม่บอก
+   → แก้ในหน้าจอเห็นค่าใหม่ พอโหลดใหม่ค่ากลับเป็นเหมือนเดิม
+   ใหม่: เขียนแล้วอ่านกลับมาตรวจทันที · ไม่ผ่าน → ลองวิธีอื่น (setRecords / setCellValue / รูปแบบค่าอื่น)
+        ยังไม่ผ่าน → แจ้งชื่อคอลัมน์ + สาเหตุ และเก็บไว้ "รอส่ง" ไม่หายเงียบ ๆ
+========================================================= */
+const FS_EDITABLE = new Set([1, 2, 3, 4, 5, 7, 13, 15, 99001, 99002, 99003, 99004, 99005]);
+const FS_TYPE_NAMES = { 1:"ข้อความ", 2:"ตัวเลข", 3:"ตัวเลือกเดียว", 4:"หลายตัวเลือก", 5:"วันที่", 7:"ช่องทำเครื่องหมาย", 11:"ผู้ใช้", 13:"เบอร์โทร",
+  15:"ลิงก์ URL", 17:"ไฟล์แนบ", 18:"ลิงก์ตาราง", 19:"Lookup", 20:"สูตร", 21:"ลิงก์สองทาง", 22:"ตำแหน่ง", 23:"กลุ่มแชท",
+  1001:"เวลาสร้าง", 1002:"เวลาแก้ไข", 1003:"ผู้สร้าง", 1004:"ผู้แก้ไข", 1005:"เลขอัตโนมัติ",
+  99001:"บาร์โค้ด", 99002:"ความคืบหน้า", 99003:"สกุลเงิน", 99004:"ให้คะแนน", 99005:"อีเมล" };
+const fsTypeName = t => FS_TYPE_NAMES[t] || `ชนิด ${t}`;
+FS.problems = [];
+
+function fsErrText(e) {
+  const m = String(e?.message || e?.msg || e?.code || e || "").trim();
+  if (/permission|denied|forbidden|no auth|权限|无权/i.test(m)) return `ไม่มีสิทธิ์แก้ไข (${m})`;
+  return m || "ไม่ทราบสาเหตุ";
+}
+async function fsTry(fn) { try { return { ok:true, v:await fn() }; } catch (e) { return { ok:false, e }; } }
+const fsRid = v => typeof v === "string" ? v : (Array.isArray(v) ? fsRid(v[0]) : (v?.recordId || v?.id || ""));
+
+// อ่านทีละหน้า (Feishu จำกัด 200 แถว / หน้า)
+async function fsGetPage(table, pageToken) {
+  if (typeof table.getRecords === "function") {
+    const r = await fsTry(() => table.getRecords({ pageSize:200, pageToken }));
+    if (r.ok) return r.v;
+    if (typeof table.getRecordsByPage !== "function") throw r.e;
+  }
+  return table.getRecordsByPage({ pageSize:200, pageToken });
+}
+
+// ค่าเดียวกันในรูปแบบอื่น ๆ (Feishu แต่ละเวอร์ชันรับไม่เหมือนกัน)
+function fsAltValues(meta, v) {
+  if (v === null || v === undefined) return [null];
+  switch (meta?.type) {
+    case FT.Text: case 99001: {
+      const s = Array.isArray(v) ? v.map(x => x?.text ?? "").join("") : String(v);
+      return [v, s];
+    }
+    case FT.SingleLink: case FT.DuplexLink: {
+      const ids = Array.isArray(v) ? v : (v.recordIds || v.record_ids || []);
+      const tableId = v.tableId || v.table_id || meta.property?.tableId || FS.tableId;
+      return [{ text:v.text || "", type:"text", recordIds:ids, tableId }, { recordIds:ids, tableId },
+        { text:v.text || "", type:"text", recordIds:ids, tableId, record_ids:ids, table_id:tableId }, ids];
+    }
+    case FT.SingleSelect: return v && typeof v === "object" ? [v, { id:v.id }, v.id, v.text] : [v];
+    case FT.MultiSelect: return Array.isArray(v) ? [v, v.map(o => ({ id:o.id })), v.map(o => o.id)] : [v];
+    case 13: return [v, [{ type:"text", text:String(v) }]];   // เบอร์โทร
+    default: return [v];
+  }
+}
+
+// ค่าที่ใช้เทียบ "เขียนแล้วตรงกันไหม"
+function fsCellKey(value, meta) {
+  if (value === null || value === undefined || value === "") return "";
+  const t = meta?.type;
+  if (t === FT.SingleLink || t === FT.DuplexLink) {
+    const ids = Array.isArray(value) ? value : (value.recordIds || value.record_ids || []);
+    return [...ids].map(String).sort().join(",");
+  }
+  if (t === FT.MultiSelect && Array.isArray(value)) return value.map(o => String(o?.text ?? o?.name ?? o)).sort().join(",");
+  if (t === FT.SingleSelect && typeof value === "object") return String(value.text ?? value.name ?? "");
+  if (FS_DATE_TYPES.includes(t) && typeof value === "number") return localISO(new Date(value));
+  if (typeof value === "number") return String(value);
+  const s = String(fsCell(value, t)).trim().replace(/\s*,\s*/g, ",");
+  return /^-?[\d,]+(\.\d+)?$/.test(s) ? String(Number(s.replace(/,/g, ""))) : s;
+}
+
+async function fsReadBack(table, recordId) {
+  if (typeof table.getRecordById !== "function") return null;
+  const r = await table.getRecordById(recordId);
+  return r?.fields || r?.record?.fields || null;
+}
+
+/* แก้แถวที่มีอยู่ — คืนรายการคอลัมน์ที่เขียนไม่ได้ · ไม่ได้สักคอลัมน์ = throw (คิวจะลองใหม่) */
+async function fsSetFields(table, recordId, fields, metas, where, { quiet = false } = {}) {
+  const ids = Object.keys(fields);
+  if (!ids.length) return [];
+  const metaOf = id => metas.find(m => m.id === id);
+  const mismatched = async list => {
+    const got = await fsTry(() => fsReadBack(table, recordId));
+    if (!got.ok || !got.v) return [];   // ตรวจไม่ได้ → เชื่อผลการเขียน
+    return list.filter(id => fsCellKey(got.v[id], metaOf(id)) !== fsCellKey(fields[id], metaOf(id)));
+  };
+  let todo = ids, firstErr = null;
+  const a = await fsTry(() => table.setRecord(recordId, { fields }));
+  if (a.ok) { todo = await mismatched(ids); if (!todo.length) return []; }
+  else {
+    firstErr = a.e;
+    if (typeof table.setRecords === "function") {
+      const b = await fsTry(() => table.setRecords([{ recordId, fields }]));
+      if (b.ok) { todo = await mismatched(ids); if (!todo.length) return []; }
+    }
+  }
+  // ทีละคอลัมน์ · หลายรูปแบบค่า
+  const failed = [];
+  for (const id of todo) {
+    const meta = metaOf(id);
+    let done = false, accepted = false, err = firstErr;
+    for (const val of fsAltValues(meta, fields[id])) {
+      for (const attempt of [
+        () => typeof table.setCellValue === "function" ? table.setCellValue(id, recordId, val) : Promise.reject(new Error("ไม่มี setCellValue")),
+        () => table.setRecord(recordId, { fields:{ [id]:val } })
+      ]) {
+        const r = await fsTry(attempt);
+        if (!r.ok) { err = r.e; continue; }
+        accepted = true;
+        if (!(await mismatched([id])).length) { done = true; break; }
+      }
+      if (done) break;
+    }
+    if (!done) failed.push({ field:meta?.name || id, warn:accepted,
+      error:accepted ? "Feishu รับคำสั่งแต่ค่าในตารางไม่เปลี่ยน (ชนิดคอลัมน์ไม่รับค่านี้ / ไม่มีตัวเลือกนี้)" : fsErrText(err) });
+  }
+  if (failed.length && !quiet) fsProblem(where, failed);
+  fsThrowIfHard(failed, !quiet);
+  return failed;
+}
+
+// มีคอลัมน์ที่เขียนไม่สำเร็จจริง (ไม่ใช่แค่ Base แปลงรูปแบบ) → throw ให้คิวเก็บไว้ลองใหม่
+function fsThrowIfHard(failed, reported = true) {
+  const hard = (failed || []).filter(f => !f.warn);
+  if (!hard.length) return;
+  const e = new Error(hard.map(f => `${f.field}: ${f.error}`).join(" · "));
+  e.fsFailed = hard;
+  e.fsReported = reported;
+  throw e;
+}
+
+/* เพิ่มแถวใหม่ — คืน { recordId, failed } */
+async function fsAddFields(table, fields, metas, where, { quiet = false } = {}) {
+  const metaOf = id => metas.find(m => m.id === id);
+  const a = await fsTry(() => table.addRecord({ fields }));
+  let rid = a.ok ? fsRid(a.v) : "";
+  let rest = {};
+  if (!rid) {
+    // เพิ่มเฉพาะคอลัมน์พื้นฐานก่อน แล้วค่อยใส่คอลัมน์ที่เหลือทีละคอลัมน์
+    const simple = {}, others = {};
+    Object.entries(fields).forEach(([id, v]) => {
+      const t = metaOf(id)?.type;
+      ([FT.Text, FT.Number, FT.DateTime, 13].includes(t) ? simple : others)[id] = v;
+    });
+    const attempts = [
+      [() => table.addRecord({ fields:simple }), others],
+      [() => typeof table.addRecords === "function" ? table.addRecords([{ fields:simple }]) : Promise.reject(new Error("-")), others],
+      [() => table.addRecord({ fields:{} }), fields]
+    ];
+    for (const [attempt, remain] of attempts) {
+      const r = await fsTry(attempt);
+      if (r.ok && fsRid(r.v)) { rid = fsRid(r.v); rest = { ...remain }; break; }
+    }
+    if (!rid) throw a.e || new Error("เพิ่มแถวไม่สำเร็จ");
+  }
+  // ตรวจค่าที่เพิ่ม → คอลัมน์ที่ไม่ตรงเขียนซ้ำ
+  const got = await fsTry(() => fsReadBack(table, rid));
+  if (got.ok && got.v) Object.entries(fields).forEach(([id, v]) => {
+    if (fsCellKey(got.v[id], metaOf(id)) !== fsCellKey(v, metaOf(id))) rest[id] = v;
+  });
+  let failed = [];
+  if (Object.keys(rest).length) {
+    const r = await fsTry(() => fsSetFields(table, rid, rest, metas, where, { quiet:true }));
+    failed = r.ok ? r.v : (r.e.fsFailed || [{ field:"-", error:fsErrText(r.e) }]);
+  }
+  if (failed.length && !quiet) fsProblem(where, failed);
+  return { recordId:rid, failed };
+}
+
+/* ---------- ปัญหาการบันทึก (แสดงให้ผู้ใช้เห็น ไม่เงียบ) ---------- */
+function fsProblem(where, failed) {
+  const at = nowText();
+  failed.forEach(f => {
+    const key = `${where}|${f.field}|${f.error}`;
+    FS.problems = FS.problems.filter(p => p.key !== key);
+    FS.problems.unshift({ key, at, where, field:f.field, error:f.error, warn:!!f.warn });
+  });
+  FS.problems = FS.problems.slice(0, 100);
+  FS.flushWarned = true;
+  fsRenderSyncStrip();
+  showToast(`⚠ บันทึกลง Feishu ไม่สำเร็จ · ${where} · ${failed.map(f => f.field).join(", ")} — กด "⚠ ปัญหาการบันทึก" เพื่อดูสาเหตุ`);
+}
+
+// คอลัมน์ในตารางหลักของฟิลด์ใน Dashboard (ชื่อใน Base อาจต่างจากชื่อมาตรฐาน)
+function fsMainMeta(field) {
+  const metas = FS.mainMeta || [];
+  return metas.find(m => m.name === field) ||
+    metas.find(m => HeaderLookup.get(normHeader(m.name)) === field) ||
+    metas.find(m => normHeader(m.name) === normHeader(field)) || null;
+}
+const fsSameText = (a, b) => {
+  const n = v => String(v ?? "").trim().replace(/\s+00:00$/, "").replace(/\s*,\s*/g, ",");
+  const x = n(a), y = n(b);
+  if (x === y) return true;
+  const num = s => /^-?[\d,]+(\.\d+)?$/.test(s) ? Number(s.replace(/,/g, "")) : NaN;
+  return !isNaN(num(x)) && num(x) === num(y);
+};
+
+// ฟอร์มแก้ไขลูกค้า: คอลัมน์ที่ Feishu ไม่ให้เขียนจากภายนอก (สูตร / ผู้ใช้ / ไฟล์แนบ / ตำแหน่ง ฯลฯ) → ล็อกไว้ พร้อมบอกเหตุผล
+function fsMarkReadonly() {
+  $("drawerBody")?.querySelectorAll("[data-field]").forEach(input => {
+    const meta = fsMainMeta(input.dataset.field);
+    let why = "";
+    if (!meta) why = "ไม่พบคอลัมน์นี้ในตาราง Feishu";
+    else if (!FS_EDITABLE.has(meta.type)) why = `คอลัมน์ชนิด "${fsTypeName(meta.type)}" แก้ได้ใน Feishu โดยตรงเท่านั้น`;
+    if (!why) return;
+    input.disabled = true;
+    input.title = why;
+    input.style.opacity = ".6";
+    if (!input.nextElementSibling?.classList?.contains("fs-ro-note")) {
+      const note = document.createElement("div");
+      note.className = "small-list fs-ro-note";
+      note.textContent = `🔒 ${why}`;
+      input.after(note);
+    }
+  });
+  if (typeof translateTree === "function") translateTree($("drawerBody"));
+}
+
+/* ---------- หน้าต่างผลตรวจ / ปัญหาการบันทึก ---------- */
+function fsShowReport(title, lines) {
+  let box = $("fsReport");
+  if (!box) {
+    box = document.createElement("div");
+    box.id = "fsReport";
+    box.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;padding:12px";
+    document.body.appendChild(box);
+    box.addEventListener("click", e => { if (e.target === box) box.remove(); });
+  }
+  const textValue = lines.join("\n");
+  box.innerHTML = `<div class="panel" style="max-width:820px;width:100%;max-height:90vh;display:flex;flex-direction:column;gap:10px;margin:0">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><strong>${escapeHTML(title)}</strong>
+        <button class="btn btn-sm" id="fsReportClose" type="button">✕</button></div>
+      <textarea readonly style="flex:1;min-height:320px;width:100%;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;white-space:pre;overflow:auto">${escapeHTML(textValue)}</textarea>
+      <div style="display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap">
+        ${FS.problems.length ? `<button class="btn btn-sm" id="fsReportClear" type="button">ล้างรายการปัญหา</button>` : ""}
+        <button class="btn btn-sm btn-primary" id="fsReportCopy" type="button">คัดลอกผล</button></div></div>`;
+  $("fsReportClose").onclick = () => box.remove();
+  $("fsReportCopy").onclick = async () => {
+    const ta = box.querySelector("textarea");
+    try { await navigator.clipboard.writeText(textValue); } catch (_) { ta.select(); try { document.execCommand("copy"); } catch (__) {} }
+    showToast("คัดลอกแล้ว — วางส่งให้ผู้ดูแลระบบได้");
+  };
+  if ($("fsReportClear")) $("fsReportClear").onclick = () => { FS.problems = []; box.remove(); fsRenderSyncStrip(); };
+  if (typeof translateTree === "function") translateTree(box);
+}
+
+function fsShowProblems() {
+  const q = Object.values(FS.q);
+  fsShowReport("ปัญหาการบันทึกลง Feishu", [
+    `รอส่ง ${q.length + Object.keys(FS.pending).length} รายการ · ปัญหาล่าสุด ${FS.problems.length} รายการ`, "",
+    ...FS.problems.map(p => `${p.warn ? "⚠️" : "❌"} ${p.at} · ${p.where} · คอลัมน์ "${p.field}" · ${p.error}`),
+    ...(q.length ? ["", "รายการที่รอส่ง:", ...q.map(x => `• ${(FS_CHANNELS.find(c => c.id === x.ch)?.label) || (x.ch === "dp" ? "ฐาน DP" : x.ch)} · ${x.op === "delete" ? "ลบ" : "บันทึก"} · ${x.id}${x.lastError ? ` · ${x.lastError}` : ""}`)] : [])
+  ]);
+}
+
+/* ---------- ตรวจการเชื่อม + ทดสอบเขียนจริง (เขียนค่าเดิมกลับ ข้อมูลไม่เปลี่ยน) ---------- */
+async function fsDiagnose() {
+  const out = [];
+  const line = (ok, s) => out.push(`${ok === true ? "✅" : ok === false ? "❌" : "⚠️"} ${s}`);
+  showToast("กำลังตรวจการเชื่อม Feishu ...");
+  line(true, `เชื่อม Base แล้ว · ตารางหลัก "${FS.tableName}" · ${formatNumber(App.rawRows.length)} แถว · ผู้ใช้ "${App.userName || "-"}" (${App.role || "-"})`);
+  try { localStorage.setItem("__r04t", "1"); localStorage.removeItem("__r04t"); line(true, "เก็บรายการรอส่งในเครื่องได้"); }
+  catch (_) { line(false, "Feishu / เบราว์เซอร์นี้ไม่ให้เก็บข้อมูลในเครื่อง — รายการที่ยังส่งไม่สำเร็จจะหายเมื่อปิดหน้า"); }
+  const ro = (FS.mainMeta || []).filter(m => !FS_EDITABLE.has(m.type));
+  line(ro.length ? null : true, `ตารางหลัก ${FS.mainMeta?.length || 0} คอลัมน์ · แก้จาก Dashboard ไม่ได้ ${ro.length}${ro.length ? `: ${ro.map(m => `${m.name} [${fsTypeName(m.type)}]`).join(", ")}` : ""}`);
+
+  const probe = async (label, table, metas) => {
+    if (!table) { line(null, `${label}: ยังไม่มีตารางใน Base (จะสร้างให้เมื่อบันทึกครั้งแรก)`); return; }
+    const page = await fsTry(() => fsGetPage(table));
+    if (!page.ok) { line(false, `${label}: อ่านไม่ได้ — ${fsErrText(page.e)}`); return; }
+    const rec = (page.v.records || []).find(r => metas.some(m => FS_EDITABLE.has(m.type) && r.fields?.[m.id] !== null && r.fields?.[m.id] !== undefined));
+    if (!rec) { line(null, `${label}: ยังไม่มีแถวให้ทดสอบ`); return; }
+    const meta = metas.find(m => FS_EDITABLE.has(m.type) && rec.fields[m.id] !== null && rec.fields[m.id] !== undefined);
+    const val = rec.fields[meta.id];
+    const res = [];
+    for (const [name, fn] of [
+      ["setRecord", () => table.setRecord(rec.recordId, { fields:{ [meta.id]:val } })],
+      ["setRecords", () => typeof table.setRecords === "function" ? table.setRecords([{ recordId:rec.recordId, fields:{ [meta.id]:val } }]) : Promise.reject(new Error("ไม่มีในเวอร์ชันนี้"))],
+      ["setCellValue", () => typeof table.setCellValue === "function" ? table.setCellValue(meta.id, rec.recordId, val) : Promise.reject(new Error("ไม่มีในเวอร์ชันนี้"))]
+    ]) {
+      fsWrote();
+      const r = await fsTry(fn);
+      res.push(`${name} ${r.ok ? "✓" : `✗ (${fsErrText(r.e)})`}`);
+    }
+    line(res.some(x => x.includes("✓")) ? true : false, `${label}: ทดสอบเขียนค่าเดิมลง "${meta.name}" [${fsTypeName(meta.type)}] → ${res.join(" · ")}`);
+  };
+  await probe(`ตารางหลัก "${FS.tableName}"`, FS.table, FS.mainMeta || []);
+  await probe("ฐาน DP", FS.dp.table || FS.dpTable, FS.dp.meta?.length ? FS.dp.meta : (FS.dpTable ? await FS.dpTable.getFieldMetaList() : []));
+  for (const name of [...new Set(FS_CHANNELS.map(c => c.table))]) {
+    const entry = await fsEnsureTable(name, false).catch(() => null);
+    await probe(name, entry?.table, entry?.meta || []);
+  }
+  // Action Plan: ทดสอบคอลัมน์ลิงก์ลูกค้า / ตัวเลือก / วันที่ — เพิ่มแถวทดสอบแล้วลบทันที
+  if (FS.actionTable && App.uniqueRows[0]?.__baseRecordId) {
+    await fsEnsureActionFields();
+    const test = { "Action ID":`TEST-${Date.now()}`, "รายละเอียด":"ทดสอบระบบ (ลบอัตโนมัติ)", "สถานะ":ActionStatuses[0], "แผนก":ActionDepartments[0],
+      "กำหนดเสร็จ":todayISO(), "Record ID / Customer Key":`${App.uniqueRows[0].__recordId} | ทดสอบ` };
+    const fields = {};
+    for (const f of FS_ACTION_FIELDS) {
+      const meta = FS.actionMeta.find(m => m.name === f.name);
+      if (!meta) continue;
+      const v = await fsCellValue(meta, f.link ? null : test[f.name], App.uniqueRows[0].__baseRecordId);
+      if (v !== undefined && v !== null) fields[meta.id] = v;
+    }
+    fsWrote();
+    const r = await fsTry(() => fsAddFields(FS.actionTable, fields, FS.actionMeta, "ทดสอบ Action Plan", { quiet:true }));
+    if (!r.ok) line(false, `Action Plan: เพิ่มแถวไม่ได้ — ${fsErrText(r.e)}`);
+    else {
+      line(r.v.failed.length ? false : true, `Action Plan: เพิ่มแถวทดสอบ (ลิงก์ลูกค้า · ตัวเลือก · วันที่) ${r.v.failed.length ? `ไม่ครบ — ${r.v.failed.map(f => `${f.field}: ${f.error}`).join(" · ")}` : "สำเร็จทุกคอลัมน์"}`);
+      const d = await fsTry(() => FS.actionTable.deleteRecord(r.v.recordId));
+      line(d.ok, `Action Plan: ลบแถวทดสอบ ${d.ok ? "แล้ว" : `ไม่ได้ — ${fsErrText(d.e)} (ลบแถว "ทดสอบระบบ" ใน Feishu เอง)`}`);
+    }
+  } else line(null, "Action Plan: ยังไม่มีตาราง / ยังไม่มีลูกค้า — ข้ามการทดสอบ");
+  const waiting = Object.keys(FS.q).length + Object.keys(FS.pending).length;
+  line(waiting ? null : true, `รายการรอส่ง ${waiting} · ปัญหาการบันทึกล่าสุด ${FS.problems.length}`);
+  FS.problems.slice(0, 20).forEach(p => out.push(`   ${p.warn ? "⚠️" : "❌"} ${p.at} · ${p.where} · "${p.field}" · ${p.error}`));
+  out.push("", `ตรวจเมื่อ ${nowText()} · ${navigator.userAgent.slice(0, 120)}`);
+  fsShowReport("ผลตรวจการเชื่อม Feishu", out);
 }
 
 async function fsActionFields(action) {
@@ -15626,8 +16021,13 @@ async function fsPushOne(id) {
     FS.actionRec.delete(id);
   } else {
     const fields = await fsActionFields(p.action);
-    if (recordId) await FS.actionTable.setRecord(recordId, { fields });
-    else FS.actionRec.set(id, await FS.actionTable.addRecord({ fields }));
+    const where = `Action Plan ${text(p.action["Record ID / Customer Key"])}`;
+    if (recordId) await fsSetFields(FS.actionTable, recordId, fields, FS.actionMeta, where);
+    else {
+      const res = await fsAddFields(FS.actionTable, fields, FS.actionMeta, where);
+      FS.actionRec.set(id, res.recordId);
+      fsThrowIfHard(res.failed);
+    }
   }
   fsWrote();
   if (FS.pending[id] === p) delete FS.pending[id];   // ถ้าระหว่างส่งมีการแก้ใหม่ เก็บรายการใหม่ไว้ส่งรอบถัดไป
@@ -15642,7 +16042,7 @@ async function fsFlush({ quiet = true } = {}) {
     try { await fsQueue(id, () => fsPushOne(id)); ok++; }
     catch (e) { lastError = e; console.warn("Action sync", id, e); }
   }
-  if (lastError && !quiet) showToast(`ส่งเข้า Feishu ไม่สำเร็จ: ${fsErr(lastError)} — เก็บไว้ในเครื่อง จะส่งใหม่อัตโนมัติ`);
+  if (lastError && !lastError.fsReported) fsProblem("Action Plan", [{ field:"-", error:fsErrText(lastError) }]);
   else if (ok && !quiet) showToast(`ส่ง Action Plan เข้า Feishu แล้ว ${ok} รายการ`);
   return ok;
 }
@@ -15663,7 +16063,7 @@ function fsActionChanged(kind, action) {
     .then(() => showToast(kind === "delete" ? "ลบ Action Plan ใน Feishu แล้ว" : "บันทึก Action Plan ลง Feishu แล้ว"))
     .catch(e => {
       console.warn(e);
-      showToast(`ส่งเข้า Feishu ไม่สำเร็จ: ${fsErr(e)} — เก็บไว้ในเครื่อง จะส่งใหม่อัตโนมัติ`);
+      if (!e.fsReported) fsProblem(`Action Plan ${text(action["Record ID / Customer Key"])}`, e.fsFailed || [{ field:"-", error:fsErrText(e) }]);
     });
 }
 window.fsActionChanged = fsActionChanged;
@@ -15918,7 +16318,8 @@ function fsBuildEdits(recs, mainRows) {
   const edits = {};
   recs.sort((a, b) => String(a.json.at || "").localeCompare(String(b.json.at || ""))).forEach(({ json:e }) => {
     const row = byId.get(text(e.recordId));
-    if (!row || String(row[e.field] ?? "").trim() !== String(e.value ?? "").trim()) return;
+    const meta = row && fsMainMeta(e.field);
+    if (!row || !fsSameText(row[e.field] ?? (meta ? row[meta.name] : ""), e.value)) return;
     const st = edits[e.key] ||= { values:{}, original:{}, at:e.at, name:e.name, recordId:e.recordId, fp:e.fp, by:e.by };
     st.values[e.field] = e.value;
     if (!(e.field in st.original)) st.original[e.field] = e.original;
@@ -15954,6 +16355,7 @@ function fsDpFromRows(rows, headers) {
   return rows.map(r => {
     const out = { source:"file", rid:r.__baseRecordId };
     DpFields.forEach(([key]) => { out[key] = map[key] ? String(r[map[key]] ?? "").trim() : ""; });
+    out.__provRaw = out.province;
     out.province = normProvince(out.province);
     out.dp = normDP(out.dp);
     return out;
@@ -15990,7 +16392,7 @@ function fsDiff(storeKey) {
     st.snap = c.appendOnly ? new Map([...st.snap, ...now]) : now;
   }
   fsSaveQueue();
-  fsFlushQueue();
+  fsFlushQueue({ quiet:storeKey === LOG_KEY });
 }
 
 /* ---------- ส่งคิวเข้า Base ---------- */
@@ -16005,14 +16407,21 @@ async function fsPushQueued(qk) {
       FS.dp.table = t.table; FS.dp.meta = t.meta; entry = FS.dp;
       DpFields.forEach(([k, label]) => { FS.dp.cols[k] ||= label; });
     }
+    const where = `ฐาน DP ${q.item?.cols?.[FS.dp.cols.dp || "DP Code"] || ""} ${q.item?.cols?.[FS.dp.cols.subdistrict || "ตำบล/แขวง"] || ""}`.trim();
     if (q.op === "delete") await entry.table.deleteRecord(q.id);
     else {
       const fields = await fsFieldsFor(entry, q.item.cols);
       if (q.id.startsWith("new|")) {
-        const rid = await entry.table.addRecord({ fields });
+        const res = await fsAddFields(entry.table, fields, entry.meta, where);
+        const rid = res.recordId;
+        if (res.failed.some(f => !f.warn)) {   // แถวถูกสร้างแล้ว → ครั้งหน้าแก้แถวนี้แทนการเพิ่มใหม่
+          delete FS.q[qk];
+          FS.q[`dp|${rid}`] = { ch:"dp", op:"upsert", id:rid, item:q.item };
+        }
         const r = App.dpMaster.find(x => !x.rid && fsDpId(x) === q.id);
         if (r) { r.rid = rid; FS.dp.snap.delete(q.id); FS.dp.snap.set(rid, fsHash(fsDpCols(r))); }
-      } else await entry.table.setRecord(q.id, { fields });
+        fsThrowIfHard(res.failed);
+      } else await fsSetFields(entry.table, q.id, fields, entry.meta, where);
     }
   } else {
     const c = FS_CHANNELS.find(x => x.id === q.ch);
@@ -16026,8 +16435,13 @@ async function fsPushQueued(qk) {
       if (c.edits) await fsWriteMainRow(q.item.json, q.item.cols);
       const fields = await fsFieldsFor(entry, { ...q.item.cols, [KEYCOL]:q.id, [JSONCOL]:JSON.stringify(q.item.json) });
       const rid = st.rec.get(q.id);
-      if (rid) await entry.table.setRecord(rid, { fields });
-      else st.rec.set(q.id, await entry.table.addRecord({ fields }));
+      const where = `${c.label} ${q.item.cols["Record ID"] || q.item.cols["ลูกค้า"] || ""}`.trim();
+      if (rid) await fsSetFields(entry.table, rid, fields, entry.meta, where);
+      else {
+        const res = await fsAddFields(entry.table, fields, entry.meta, where);
+        st.rec.set(q.id, res.recordId);
+        fsThrowIfHard(res.failed);
+      }
     }
   }
   fsWrote();
@@ -16040,12 +16454,19 @@ async function fsWriteMainRow(e, cols) {
   const row = App.rawRows.find(r => recordKey(r) === e.key) || App.rawRows.find(r => r.__recordId === e.recordId);
   const rid = row?.__baseRecordId;
   if (!rid) { cols["ผลการเขียนในตารางหลัก"] = "ไม่พบแถวในตารางหลัก"; return; }
-  const meta = FS.mainMeta.find(m => m.name === e.field);
-  if (!meta) { cols["ผลการเขียนในตารางหลัก"] = "ไม่พบคอลัมน์ในตารางหลัก"; return; }
+  const meta = fsMainMeta(e.field);
+  const where = `แก้ไขลูกค้า ${e.recordId || ""} ${String(e.name ?? "")}`.trim();
+  if (!meta) { cols["ผลการเขียนในตารางหลัก"] = "ไม่พบคอลัมน์ในตารางหลัก"; fsProblem(where, [{ field:e.field, error:"ไม่พบคอลัมน์นี้ในตาราง Feishu" }]); return; }
   const v = await fsCellValue(meta, e.value, null, FS.table);
-  if (v === undefined) { cols["ผลการเขียนในตารางหลัก"] = "คอลัมน์ชนิดนี้แก้จาก Dashboard ไม่ได้ (เช่น สูตร / ผู้ใช้)"; return; }
-  await FS.table.setRecord(rid, { fields:{ [meta.id]:v } });
-  cols["ผลการเขียนในตารางหลัก"] = "เขียนแล้ว";
+  if (v === undefined) {
+    cols["ผลการเขียนในตารางหลัก"] = `คอลัมน์ชนิด ${fsTypeName(meta.type)} แก้จาก Dashboard ไม่ได้`;
+    fsProblem(where, [{ field:meta.name, error:[FT.SingleSelect, FT.MultiSelect].includes(meta.type)
+      ? `ไม่มีตัวเลือก "${e.value}" ในคอลัมน์นี้ และบัญชีนี้เพิ่มตัวเลือกไม่ได้ — เพิ่มตัวเลือกใน Feishu ก่อนแล้วแก้ใหม่`
+      : `คอลัมน์ชนิด "${fsTypeName(meta.type)}" รับค่า "${e.value}" ไม่ได้` }]);
+    return;
+  }
+  const failed = await fsSetFields(FS.table, rid, { [meta.id]:v }, FS.mainMeta, where);
+  cols["ผลการเขียนในตารางหลัก"] = failed.length ? `เขียนแล้วแต่ค่าไม่ตรง: ${failed[0].error}` : "เขียนแล้ว (ตรวจแล้ว)";
 }
 
 async function fsCreateDpTable() {
@@ -16061,14 +16482,25 @@ let fsFlushing = null;
 function fsFlushQueue({ quiet = true } = {}) {
   if (fsFlushing) return fsFlushing.then(() => Object.keys(FS.q).length && fsFlushQueue({ quiet }));
   fsFlushing = (async () => {
-    let ok = 0, lastError = null;
+    let ok = 0, lastError = null, lastWhere = "";
+    FS.flushWarned = false;
     for (const qk of Object.keys(FS.q)) {
-      try { await fsPushQueued(qk); ok++; } catch (e) { lastError = e; console.warn("sync", qk, e); }
+      try { await fsPushQueued(qk); ok++; }
+      catch (e) {
+        lastError = e; console.warn("sync", qk, e);
+        const q = FS.q[qk];
+        if (q) { q.lastError = fsErrText(e); q.tries = (q.tries || 0) + 1; }
+        lastWhere = q ? `${(FS_CHANNELS.find(c => c.id === q.ch)?.label) || (q.ch === "dp" ? "ฐาน DP" : q.ch)} ${q.item?.cols?.["Record ID"] || q.item?.cols?.["DP Code"] || ""}`.trim() : "";
+      }
     }
-    if (lastError && (!quiet || !FS.warnedAt || Date.now() - FS.warnedAt > 60000)) {
-      FS.warnedAt = Date.now();
-      showToast(`ส่งเข้า Feishu ไม่สำเร็จ: ${fsErr(lastError)} — เก็บไว้ในเครื่อง จะส่งใหม่อัตโนมัติ`);
-    } else if (ok && !quiet) showToast(`ส่งข้อมูลเข้า Feishu แล้ว ${ok} รายการ`);
+    if (lastError) {
+      fsSaveQueue();
+      if (!quiet || !FS.warnedAt || Date.now() - FS.warnedAt > 60000) {
+        FS.warnedAt = Date.now();
+        if (!lastError.fsReported) fsProblem(lastWhere || "บันทึก", lastError.fsFailed || [{ field:"-", error:fsErrText(lastError) }]);
+        if (!lastError.fsReported) showToast(`❌ บันทึกลง Feishu ไม่สำเร็จ: ${fsErrText(lastError)} — ยังเก็บไว้ "รอส่ง" · กด "⚠ ปัญหาการบันทึก" ดูรายละเอียด`);
+      }
+    } else if (ok && !quiet && !FS.flushWarned) showToast(`✓ บันทึกลง Feishu แล้ว (${ok} รายการ)`);
     return ok;
   })().finally(() => { fsFlushing = null; });
   return fsFlushing;
@@ -16089,8 +16521,12 @@ function fsRenderSyncStrip() {
   strip.innerHTML = `
     <span class="badge ${waiting ? "badge-orange" : "badge-green"}">${waiting ? `รอส่งเข้า Feishu ${formatNumber(waiting)} รายการ` : "ข้อมูลกลางซิงก์กับ Feishu แล้ว"}</span>
     ${tables.map(([n, ok]) => `<span class="badge ${ok ? "badge-blue" : "badge-gray"}" title="${ok ? "เชื่อมแล้ว" : "จะสร้างตารางให้อัตโนมัติเมื่อมีข้อมูลแรก"}">${ok ? "✓" : "○"} ${escapeHTML(n)}</span>`).join("")}
-    ${waiting ? `<button class="btn btn-sm" id="fsSyncNow" type="button">ส่งตอนนี้</button>` : ""}`;
+    ${waiting ? `<button class="btn btn-sm" id="fsSyncNow" type="button">ส่งตอนนี้</button>` : ""}
+    ${FS.problems.length ? `<button class="btn btn-sm" id="fsProblems" type="button" style="border-color:var(--red,#D92D20);color:var(--red,#D92D20)">⚠ ปัญหาการบันทึก (${formatNumber(FS.problems.length)})</button>` : ""}
+    <button class="btn btn-sm" id="fsDiag" type="button" title="ทดสอบอ่าน / เขียนทุกตารางใน Base (เขียนค่าเดิมกลับ ข้อมูลไม่เปลี่ยน)">🩺 ตรวจการบันทึก</button>`;
   if ($("fsSyncNow")) $("fsSyncNow").onclick = () => { fsFlushQueue({ quiet:false }); fsFlush({ quiet:false }); };
+  if ($("fsProblems")) $("fsProblems").onclick = fsShowProblems;
+  if ($("fsDiag")) $("fsDiag").onclick = () => fsDiagnose().catch(e => fsShowReport("ผลตรวจการเชื่อม Feishu", [`❌ ตรวจไม่สำเร็จ: ${fsErrText(e)}`]));
   if (typeof translateTree === "function") translateTree(strip);
 }
 
@@ -16101,7 +16537,7 @@ function fsHookStore() {
     if (App.fsMode && FS.ready && (FS_CH[key] || key === DP_KEY)) {
       // ข้อมูลกลางอยู่ใน Base — ไม่เขียนลงเครื่อง (รายการรอส่งเก็บแยกในคิว)
       if (key === EDIT_KEY && value) Object.values(value).forEach(st => { st.by ||= App.userName || ""; });
-      try { fsDiff(key); } catch (e) { console.warn("diff", key, e); }
+      try { fsDiff(key); } catch (e) { console.warn("diff", key, e); showToast(`❌ บันทึกลง Feishu ไม่ได้: ${fsErrText(e)}`); }
       return true;
     }
     if (App.fsMode && !FS.ready && (FS_CH[key] || key === DP_KEY)) {
@@ -16141,6 +16577,16 @@ async function fsLoadShared(mainRows, metas, { manual = false } = {}) {
     if (parsed) {
       FS.dp.table = FS.dpTable;
       FS.dp.meta = dp.metas;
+      Object.values(FS.q).filter(q => q.ch === "dp" && !q.id.startsWith("new|")).forEach(q => {
+        const i = parsed.findIndex(r => r.rid === q.id);
+        if (i < 0) return;
+        if (q.op === "delete") { parsed.splice(i, 1); return; }
+        DpFields.forEach(([k, label]) => {
+          const col = FS.dp.cols[k] || label;
+          if (k !== "key" && col in (q.item?.cols || {})) parsed[i][k] = String(q.item.cols[col] ?? "");
+        });
+        parsed[i].dp = normDP(parsed[i].dp);
+      });
       const fileDPs = new Set(parsed.map(r => normDP(r.dp)).filter(Boolean));
       const keep = App.dpMaster.filter(r => (r.source === "auto" && r.status === DP_STATUS_NEW) && !fileDPs.has(normDP(r.dp)));
       Object.values(FS.q).filter(q => q.ch === "dp" && q.op === "upsert" && q.id.startsWith("new|")).forEach(q => {
@@ -16155,6 +16601,9 @@ async function fsLoadShared(mainRows, metas, { manual = false } = {}) {
   App.dpMaster.forEach(r => { r.key = dpRecordKey(r); });
   rebuildDpIndex();
   FS.dp.snap = new Map(App.dpMaster.filter(fsDpSyncable).map(r => [fsDpId(r), fsHash(fsDpCols(r))]));
+  if (FS.dp.table) App.dpMaster.filter(r => r.rid && r.__provRaw && r.__provRaw !== r.province).forEach(r => {
+    FS.q[`dp|${r.rid}`] = { ch:"dp", op:"upsert", id:r.rid, item:{ cols:fsDpCols(r) } };
+  });
   FS.ready = true;
 }
 
@@ -16211,7 +16660,18 @@ function fsRenderPicker(info, mainId) {
     FS.first = true;
     fsConnect();
   };
-  $("fsReload").onclick = () => fsLoad({ manual:true });
+  $("fsReload").onclick = async () => {
+    const b = $("fsReload");
+    b.disabled = true;
+    try {
+      if (Object.keys(FS.q).length || Object.keys(FS.pending).length) {
+        b.textContent = "⏳ กำลังส่งที่ค้าง ...";
+        await fsFlushQueue({ quiet:true }).catch(() => {});
+        await fsFlush({ quiet:true }).catch(() => {});
+      }
+      await fsLoad({ manual:true });
+    } finally { b.disabled = false; fsMarkReload(); }
+  };
 }
 
 /* ---------- โหลดข้อมูล ---------- */
@@ -16221,6 +16681,7 @@ async function fsLoad({ manual = false } = {}) {
   if (!manual && !FS.first && Layers.some(isLayerOpen)) { fsSchedule(4000); return; }
   FS.loading = true;
   try {
+    if (fsFlushing) await fsFlushing.catch(() => {});   // รอการบันทึกที่กำลังส่งให้เสร็จก่อนอ่าน
     fsStatus(`กำลังอ่านข้อมูลจาก Feishu · ${FS.tableName} ...`, "orange", "กำลังซิงก์");
     const { rows, metas } = await fsReadTable(FS.table);
     rows.forEach(row => { if (!isFilled(row[App.columns.id])) row[App.columns.id] = row.__baseRecordId; });
@@ -16324,6 +16785,18 @@ async function fsInit() {
     document.querySelector(".upload-banner p").textContent =
       "อ่านข้อมูลจากตารางใน Base นี้โดยตรง · หน้าจอไม่รีเฟรชเองระหว่างดูงาน — มีข้อมูลใหม่ปุ่ม 🔄 โหลดใหม่ จะเปลี่ยนสี กดเมื่อพร้อม · การแก้ไขข้อมูล · Action Plan · Audit Call · ข้อมูลซ้ำ · ฐาน DP · Log ที่บันทึกในนี้ส่งเข้า Base ทันที · เห็นเฉพาะข้อมูลที่บัญชีคุณมีสิทธิ์";
     $("uploadButton").style.display = "none";
+    // Audit Call: เลือกสถานะ / พิมพ์หมายเหตุแล้วบันทึกเข้า Feishu ทันที (ไม่ต้องกดปุ่ม "บันทึกผลการโทร")
+    $("auditCallTable").addEventListener("change", event => {
+      if (!App.fsMode || !event.target.closest("[data-ac-field]")) return;
+      clearTimeout(FS.acTimer);
+      FS.acTimer = setTimeout(() => saveAuditCalls(), 250);
+    });
+    const openDetailBase = window.openDetail;
+    window.openDetail = function (recordId, options = {}) {
+      const r = openDetailBase.apply(this, arguments);
+      if (App.fsMode && options?.edit) fsMarkReadonly();
+      return r;
+    };
     await fsConnect();
     if (FS.dpTable) $("dpUploadButton").style.display = "none";
   } catch (error) {
@@ -16334,7 +16807,7 @@ async function fsInit() {
 }
 
 // ให้ทดสอบ / เรียกจากภายนอกได้
-window.R04Feishu = { FS, fsInit, fsConnect, fsLoad, fsFlush, fsFlushQueue, fsCreateActionTable, fsActionsFromBase };
+window.R04Feishu = { FS, fsInit, fsConnect, fsLoad, fsFlush, fsFlushQueue, fsCreateActionTable, fsActionsFromBase, fsDiagnose, fsShowProblems, fsSetFields, fsAddFields };
 
 </script>
 
