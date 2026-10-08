@@ -5285,6 +5285,15 @@ function renderCustomerTable(containerId, rows, limit = 20, opts = {}) {
     ? H("pic", "PIC") + H("rm", "RM") + H("spv", "SPV") + H("admin", "Admin")
     : H("sales", "Sales");
 
+  // สถานะลูกค้า (VIP) — เฉพาะตารางที่มีลูกค้า MKT / Network (ไม่แสดงในตาราง HOME)
+  const showVip = containerId !== "homeTable" && !(containerId === "drillTable" && App.currentPage === "home");
+  const vipCell = row => {
+    if (!showVip) return "";
+    const b = deptGroupOf(row) === "mkt" ? vipBucket(vipTargetRow(row)?.[App.columns.vipStatus]) : "";
+    const label = { [VIP.CLOSED]:"🟢 ปิดดีล", [VIP.NEGOTIATE]:"🟡 เจรจา", [VIP.REJECT]:"🔴 ปฏิเสธ" }[b];
+    return `<td>${label ? `<span class="badge ${VipInfo[b].badge}" style="white-space:nowrap">${label}</span>` : b ? `<span class="badge badge-gray">${escapeHTML(b)}</span>` : ""}</td>`;
+  };
+
   const teamCells = row => isOperationTable
     ? `<td>${cell(row[App.columns.pic])}</td><td>${cell(row[App.columns.rm])}</td><td>${cell(row[App.columns.spv])}</td><td>${cell(row[App.columns.admin])}</td>`
     : `<td>${cell(row[App.columns.sales])}</td>`;
@@ -5296,6 +5305,7 @@ function renderCustomerTable(containerId, rows, limit = 20, opts = {}) {
           <tr>
             ${H("name", "ลูกค้า")}
             ${H("ctype", "ประเภทลูกค้า")}
+            ${showVip ? H("vip", "สถานะลูกค้า") : ""}
             ${H("phone", "เบอร์โทร")}
             ${H("province", "จังหวัด")}
             ${teamHeaders}
@@ -5317,6 +5327,7 @@ function renderCustomerTable(containerId, rows, limit = 20, opts = {}) {
                 ${row.__duplicate ? `<span class="duplicate-mark" title="พบข้อมูลซ้ำ">⚠</span>` : ""}
               </td>
               <td>${ctypeBadge(row)}</td>
+              ${vipCell(row)}
               <td>${cell(row[App.columns.phone])}</td>
               <td>${cell(row[App.columns.province])} ${mapLinkHTML(row[App.columns.location], true)}</td>
               ${teamCells(row)}
@@ -6719,7 +6730,8 @@ const CustomerSortKeys = {
   jt: r => number(r[App.columns.jt]),
   comp: r => competitorForRow(r),
   remark: r => getRemarkValues(r).join(" "),
-  status: r => (r.__duplicate ? 4 : 0) + (r.__edited ? 2 : 0) + (r.__auditOk ? 1 : 0)
+  status: r => (r.__duplicate ? 4 : 0) + (r.__edited ? 2 : 0) + (r.__auditOk ? 1 : 0),
+  vip: r => { const k = vipRank(vipTargetRow(r)?.[App.columns.vipStatus]); return k ? -k : ""; }   // ปิดดีลขึ้นก่อน · ว่างอยู่ท้าย
 };
 
 function compareValues(a, b) {
@@ -7583,8 +7595,24 @@ App.dpMaster = loadStore(DP_KEY) || [];
 App.dpMaster.forEach(r => { if (r && r.province) r.province = normProvince(r.province); });
 App.dpIndex = new Map();
 
+// รหัส DP 1 รหัส: ตัดอักขระมองไม่เห็น · ".0" ท้ายตัวเลข · ช่องว่าง · เครื่องหมายหัว / ท้าย (เช่น "857052-" → "857052")
+// ข้อความที่ไม่มีตัวอักษร / ตัวเลขเลย ("-", "ไม่ทราบ") = ไม่มีรหัส
 function normDP(value) {
-  return String(value ?? "").trim().replace(/\.0+$/, "").replace(/\s+/g, "");
+  return String(value ?? "")
+    .replace(/[\u200B-\u200D\u2060\uFEFF\u00A0]/g, "")
+    .trim()
+    .replace(/\.0+$/, "")
+    .replace(/\s+/g, "")
+    .replace(/^[^0-9A-Za-z]+|[^0-9A-Za-z]+$/g, "");
+}
+
+// ช่อง DP ที่กรอกหลายรหัส ("857066_857059_857071" · "857052, 857053" · "857052/857053") → แยกเป็นทีละรหัส
+function dpCodes(value) {
+  return [...new Set(String(value ?? "")
+    .replace(/[\u200B-\u200D\u2060\uFEFF\u00A0]/g, "")
+    .split(/[_,，、/;|\s]+/)
+    .map(normDP)
+    .filter(Boolean))];
 }
 
 function dpRecordKey(r) {
@@ -7615,14 +7643,20 @@ function saveDpMaster() {
 }
 
 // DP ในข้อมูลเข้าพบที่ยังไม่มีในฐาน → เพิ่มแถวใหม่ (ค่าที่พบบ่อยที่สุดของ จังหวัด/อำเภอ/ตำบล)
+// สร้างใหม่ทุกครั้งจากข้อมูลล่าสุด: แก้รหัสในแบบฟอร์ม / เพิ่มในฐานแล้ว → รายการ "รอยืนยัน" หายเอง
+// ช่องที่กรอกหลายรหัส → ตรวจทีละรหัส เพิ่มเฉพาะรหัสที่ยังไม่มีในฐาน
 function autoAddDPs() {
+  const before = new Set(App.dpMaster.filter(r => r.source === "auto" && r.status === DP_STATUS_NEW).map(r => normDP(r.dp)));
+  const nBefore = App.dpMaster.length;
+  App.dpMaster = App.dpMaster.filter(r => !(r.source === "auto" && r.status === DP_STATUS_NEW));
   rebuildDpIndex();
   const found = new Map();
   [...App.activeRawRows, ...App.pendingRows].forEach(row => {
-    const dp = normDP(row[App.columns.dp]);
-    if (!dp || App.dpIndex.has(dp)) return;
-    if (!found.has(dp)) found.set(dp, []);
-    found.get(dp).push(row);
+    dpCodes(row[App.columns.dp]).forEach(dp => {
+      if (App.dpIndex.has(dp)) return;
+      if (!found.has(dp)) found.set(dp, []);
+      found.get(dp).push(row);
+    });
   });
   const mode = (rows, col, norm = v => v) => {
     const c = new Map();
@@ -7638,14 +7672,21 @@ function autoAddDPs() {
       unit:"NETWORK", dp, shop:"", refEn:"", pic:"", rm:"", spv:"", admin:"",
       status:DP_STATUS_NEW, note:`พบในข้อมูลเข้าพบ ${rows.length} รายการ`, source:"auto"
     });
-    added++;
+    if (!before.has(dp)) added++;
   });
-  if (added) saveDpMaster();
+  const now = new Set(found.keys());
+  if (added || now.size !== before.size || App.dpMaster.length !== nBefore) saveDpMaster();
+  else rebuildDpIndex();
   return added;
 }
 
+// DP ของร้าน: รหัสแรกที่มีในฐาน (ช่องที่กรอกหลายรหัสใช้รหัสแรกที่เจอ)
 function dpInfo(row) {
-  return App.dpIndex.get(normDP(row[App.columns.dp])) || null;
+  for (const dp of dpCodes(row[App.columns.dp])) {
+    const info = App.dpIndex.get(dp);
+    if (info) return info;
+  }
+  return null;
 }
 
 // จังหวัดของลูกค้า: ฐาน DP ก่อน → จังหวัดที่กรอก
@@ -7723,10 +7764,10 @@ App.dpLimit = 50;
 function dpVisitStats() {
   const byDp = new Map();
   App.filteredRows.forEach(row => {
-    const dp = normDP(row[App.columns.dp]);
-    if (!dp) return;
-    if (!byDp.has(dp)) byDp.set(dp, []);
-    byDp.get(dp).push(row);
+    dpCodes(row[App.columns.dp]).forEach(dp => {
+      if (!byDp.has(dp)) byDp.set(dp, []);
+      byDp.get(dp).push(row);
+    });
   });
   return byDp;
 }
@@ -14252,7 +14293,9 @@ const BASE_VOCAB_ROWS = [
 ["ป้าย", "Dashboard ใช้ Record {*} (ส่งล่าสุด) เป็นข้อมูลหลัก", "Dashboard uses Record {*} (latest) as the main record", "看板以 Record {*}（最新）为主记录"],
 ["ป้าย", "จับความสัมพันธ์แบบ OR: เบอร์โทรซ้ำ หรือชื่อลูกค้าซ้ำ (เฉพาะจังหวัดเดียวกัน)", "Matched with OR: same phone or same customer name (same province only)", "按 OR 规则匹配：电话相同或客户名相同（仅限同一府）"],
 ["ป้าย", "สถานะ VIP ใช้ค่าที่ดีที่สุดในกลุ่ม", "VIP status uses the best value in the group", "VIP 状态取组内最佳值"],
-["ป้าย", "สถานะ VIP มาจาก Record {*} (สถานะดีที่สุดในกลุ่ม)", "VIP status from Record {*} (best in group)", "VIP 状态来自 Record {*}（组内最佳）"]
+["ป้าย", "สถานะ VIP มาจาก Record {*} (สถานะดีที่สุดในกลุ่ม)", "VIP status from Record {*} (best in group)", "VIP 状态来自 Record {*}（组内最佳）"],
+/* ----- คอลัมน์สถานะลูกค้า (2026-10-08) ----- */
+["ป้าย", "สถานะลูกค้า", "Customer status", "客户状态"]
 ];
 
 /* ---------- ภาษา 3 ภาษา + คลังคำศัพท์ (Vocabulary) ----------
